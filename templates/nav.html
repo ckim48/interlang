@@ -1,0 +1,146 @@
+{# templates/nav.html (light theme) #}
+<link rel="icon" href="{{ url_for('static', filename='img/favicon-32.png') }}" sizes="32x32">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" sizes="180x180">
+
+<nav class="navbar et-nav" role="navigation">
+  <style>
+    /* Uses your page tokens if present; falls back to these */
+    :root{
+      --ink: var(--ink, #0e1b35);
+      --muted: var(--muted, #4b5567);
+      --bg: var(--bg, #ffffff);
+      --ring: var(--ring, #cfe2ff);
+      --brand: var(--brand, #3b82f6);
+      --accent: var(--accent, #8f9bff);
+      --grid: var(--grid, #0e1b3514);
+    }
+
+    /* NAV: light, airy, sticky, high z-index */
+    .et-nav{
+      position: sticky; top: 0; z-index: 10000;
+      background: #ffffff;
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid #e6ecff;
+      box-shadow: 0 8px 24px rgba(13,31,64,.06);
+    }
+
+    .et-brand{
+      font-weight:800; letter-spacing:.2px; text-decoration:none;
+      color: black !important; display:inline-flex; align-items:center; gap:.55rem;
+    }
+    .et-brand .mark{
+      width:.55rem; height:.55rem; border-radius:999px; display:inline-block;
+      background: black;
+      box-shadow: 0 0 0 2px #ffffff;
+    }
+
+    /* Menu button (light pill) */
+    .et-menu-btn{
+      color:#223357; font-weight:800; border-radius:12px;
+      background: linear-gradient(180deg,#fff,#f6f9ff);
+      border:1px solid #e6ecff;
+      padding:.45rem .75rem; display:inline-flex; align-items:center; gap:.5rem;
+      box-shadow:0 8px 18px rgba(13,31,64,.06);
+    }
+    .et-menu-btn:hover{
+      background: linear-gradient(180deg,#fff,#eef4ff);
+      color:#0e1b35;
+    }
+
+    /* Dropdown (light glass) */
+    .et-dd{
+      background: linear-gradient(180deg,#ffffff,#f7faff);
+      border:1px solid #e6ecff;
+      border-radius:14px; box-shadow: 0 14px 40px rgba(13,31,64,.12);
+      min-width: 220px; padding:.35rem;
+    }
+    .et-dd .dropdown-item{
+      color:#2f3b57; font-weight:700; border-radius:10px; padding:.5rem .65rem;
+      display:flex; align-items:center; gap:.5rem;
+    }
+    .et-dd .dropdown-item:hover{
+      color:#0e1b35; background: linear-gradient(180deg,#fff,#eef4ff);
+      border:1px solid #e6ecff;
+    }
+    .et-dd .dropdown-item.active{
+      color:#0e1b35;
+      background: linear-gradient(90deg, #e9f1ff, #f1f4ff);
+      border:1px solid #d9e6ff;
+      box-shadow: inset 0 0 0 1px #e6ecff;
+    }
+    .et-dd .dropdown-divider{
+      border-color: #e6ecff; margin:.35rem 0;
+    }
+
+    /* Optional compact username badge style (kept for future use) */
+    .et-user{
+      display:inline-flex; align-items:center; gap:.4rem;
+      background:linear-gradient(135deg,#ffffff,#f3f7ff);
+      color:#102143; border:1px solid #d9e6ff;
+      border-radius:999px; padding:.2rem .45rem; font-weight:800; font-size:.85rem;
+    }
+
+    /* Make icons inherit the light theme tone */
+    .et-dd i, .et-menu-btn i { color: var(--brand); }
+  </style>
+
+  {% set ep = (request.endpoint or '') %}
+  {% set boards_active = ep in ('home','start_quiz','submit_quiz_instance') %}
+  {% set stories_active = ep in ('stories','read_story') %}
+  {% set profile_active = ep == 'profile' %}
+  {% set ach_active = ep == 'achievements' %}
+
+  <div class="container d-flex align-items-center justify-content-between" style="min-height:56px">
+    <!-- Brand -->
+    <a class="et-brand navbar-brand" href="{{ url_for('index') }}">
+      <span>InterLang</span><span class="mark" aria-hidden="true"></span>
+    </a>
+
+    <!-- Single dropdown menu (right) -->
+    <div class="dropdown">
+      <button class="et-menu-btn btn btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+        <i class="bi bi-list"></i>
+        <span>Menu</span>
+      </button>
+
+      <ul class="dropdown-menu dropdown-menu-end et-dd">
+        <li>
+          <a class="dropdown-item {% if boards_active %}active{% endif %}" href="{{ url_for('home') }}">
+            <i class="bi bi-grid-3x3-gap"></i> Boards
+          </a>
+        </li>
+        <li>
+          <a class="dropdown-item {% if stories_active %}active{% endif %}" href="{{ url_for('stories') }}">
+            <i class="bi bi-book-half"></i> Stories
+          </a>
+        </li>
+        <li>
+          <a class="dropdown-item {% if ach_active %}active{% endif %}" href="{{ url_for('achievements') }}">
+            <i class="bi bi-trophy"></i> Achievements
+          </a>
+        </li>
+
+        <li><hr class="dropdown-divider"></li>
+
+        {% if session.get('username') %}
+          <li>
+            <a class="dropdown-item {% if profile_active %}active{% endif %}" href="{{ url_for('profile') }}">
+              <i class="bi bi-person-badge"></i> Profile
+            </a>
+          </li>
+          <li>
+            <a class="dropdown-item" href="{{ url_for('logout') }}">
+              <i class="bi bi-box-arrow-right"></i> Logout
+            </a>
+          </li>
+        {% else %}
+          <li>
+            <a class="dropdown-item" href="{{ url_for('login') }}">
+              <i class="bi bi-box-arrow-in-right"></i> Login
+            </a>
+          </li>
+        {% endif %}
+      </ul>
+    </div>
+  </div>
+</nav>

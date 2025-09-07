@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Profile • {{ username }}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+  <link rel="icon" href="{{ url_for('static', filename='img/favicon.png') }}" sizes="32x32">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" sizes="180x180">
+
+<style>
+:root{
+  /* Light theme tokens aligned with nav.html */
+  --ink:#0e1b35;               /* primary text */
+  --muted:#4b5567;             /* secondary text */
+  --bg:#ffffff;                /* page background */
+  --bg-soft:#f7f9ff;           /* soft card wash */
+  --grid:#0e1b3514;            /* subtle grid lines */
+  --brand:#3b82f6;             /* blue brand */
+  --accent:#8f9bff;            /* lilac accent */
+  --ring:#cfe2ff;              /* focus ring */
+  --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444;
+}
+
+body{
+  color:var(--ink); background:var(--bg);
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  background-image:
+    radial-gradient(36vmax 36vmax at 12% 6%, #eef4ff 0%, transparent 70%),
+    radial-gradient(32vmax 32vmax at 88% 0%, #f3f6ff 0%, transparent 70%),
+    radial-gradient(30vmax 30vmax at 10% 90%, #f7faff 0%, transparent 70%);
+  background-attachment: fixed;
+}
+
+/* Chips */
+.pill{
+  background:linear-gradient(180deg,#fff,#f3f7ff);
+  color:#223357; border:1px solid #e6ecff;
+  font-weight:800; border-radius:999px; padding:.35rem .75rem; display:inline-flex; gap:.45rem; align-items:center;
+  box-shadow:0 6px 16px rgba(13,31,64,.06);
+}
+.title-pill{
+  background:linear-gradient(180deg,#fff8e6,#fff3cc);
+  color:#5e4300; border:1px solid #ffe3a3;
+  border-radius:999px; padding:.35rem .6rem; font-weight:800; display:inline-flex; gap:.45rem; align-items:center;
+}
+
+/* Light “glass” cards */
+.card-glass{
+  border:1px solid #e6ecff;
+  background:linear-gradient(180deg,#fff,#f7faff);
+  border-radius:18px; box-shadow:0 10px 28px rgba(13,31,64,.06);
+}
+
+/* Progress */
+.progress{height:12px;background:#eef3ff;border:1px solid #e2ebff;border-radius:999px;overflow:hidden}
+.progress-bar{
+  background-image:linear-gradient(90deg,var(--brand),var(--accent));
+  font-size:.75rem;font-weight:800;color:#ffffffcc
+}
+
+/* Chips (small) */
+.chip{
+  border-radius:999px;padding:.2rem .55rem;font-weight:800;font-size:.8rem;
+  background:linear-gradient(180deg,#fff,#f3f7ff);color:#223357;border:1px solid #e6ecff
+}
+.chip-green{
+  background:linear-gradient(180deg,#eafff3,#d7ffe9);border-color:#baf3d0;color:#0b3b22
+}
+.badge-tone{background:linear-gradient(180deg,#fff,#f3f7ff);color:#223357;border:1px solid #e6ecff;font-weight:700}
+
+/* ===== LIGHT THEME TABLE ===== */
+.table-wrap{
+  border:1px solid #e6ecff; border-radius:16px; overflow:hidden;
+  background:linear-gradient(180deg,#fff,#f7faff);
+  box-shadow:0 8px 22px rgba(13,31,64,.05);
+}
+.table-modern{ border-collapse: separate; border-spacing: 0; width:100%; color:var(--ink); }
+.table-modern thead th{
+  position: sticky; top:0; z-index:1;
+  background:linear-gradient(180deg,#f7fbff,#eef4ff);
+  border-bottom:1px solid #e6ecff !important;
+  text-transform: uppercase; letter-spacing:.35px; font-size:.75rem; color:#1f2b46;
+  padding:.6rem .75rem !important;
+}
+.table-modern td{
+  padding:.65rem .75rem !important; vertical-align: middle;
+  border-bottom:1px solid #edf2ff;
+}
+.table-modern tbody tr:hover{ background:#f7fbff }
+
+/* Tiny progress in table */
+.progress.progress-tiny{ height:8px; border-radius:999px; background:#eef3ff; border:1px solid #e2ebff; }
+.score-label{ font-weight:700; font-size:.85rem; }
+.score-good{ color:#0f5132; } .score-ok{ color:#7a5200; } .score-bad{ color:#7f1d1d; }
+
+/* Line dots */
+.line-dots{ display:flex; gap:6px; align-items:center; }
+.line-dots .dot{
+  width:10px; height:10px; border-radius:3px;
+  background:#eef3ff; border:1px solid #e2ebff; box-shadow: inset 0 0 0 1px #ffffff;
+}
+.line-dots .dot.on{
+  background: linear-gradient(180deg, var(--brand), var(--accent));
+  border-color:#cfe2ff;
+}
+
+/* Vocab pills */
+.word-chip{
+  display:inline-flex; align-items:center; gap:8px;
+  padding:.25rem .55rem; border-radius:999px;
+  background:linear-gradient(180deg,#fff,#f3f7ff); border:1px solid #e6ecff;
+  font-weight:800; color:#1f2b46; text-decoration:none !important;
+}
+.kr-badge{
+  background:linear-gradient(180deg,#eafff3,#d7ffe9); color:#0b3b22;
+  border:1px solid #baf3d0; border-radius:999px;
+  padding:.15rem .5rem; font-weight:800; font-size:.78rem;
+}
+.clamp-2{ display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+
+/* Inputs – light */
+input, select{
+  background:#fff !important; color:#0e1b35 !important;
+  border:1px solid #e2ebff !important; border-radius:12px !important;
+  box-shadow: 0 2px 0 rgba(13,31,64,.02) inset;
+}
+input:focus, select:focus{
+  outline:none; border-color:#cfe2ff !important; box-shadow:0 0 0 .2rem #cfe2ff66 !important;
+}
+
+/* Rec card */
+.book-card{
+  border:1px solid #e6ecff; background:linear-gradient(180deg,#fff,#f7faff); border-radius:16px;
+  box-shadow:0 8px 22px rgba(13,31,64,.06);
+}
+
+/* Small helper */
+.dim{ color:var(--muted) }
+</style>
+</head>
+<body>
+
+<!-- Include global navbar (solid light) -->
+{% include 'nav.html' %}
+
+<div class="container pb-5 mt-4">
+
+  <!-- Stats -->
+  <div class="row g-3 mb-3">
+    <div class="col-lg-6">
+      <div class="card-glass p-3 h-100">
+        {% set current_xp = (user_xp|default(0)) % 100 %}
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <div class="fw-bold">XP Progress</div>
+          <div class="chip chip-green"><i class="bi bi-stars me-1"></i>{{ current_xp }}/100</div>
+        </div>
+        <div class="progress mb-1"><div class="progress-bar" style="width: {{ current_xp }}%;"></div></div>
+        <div class="small dim">Keep going to reach the next level!</div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      {% set total = achievements_total|default(0) %}
+      {% set earned = achievements_earned|default(0) %}
+      {% set pct = 0 if total==0 else ((earned*100)//total) %}
+      <div class="card-glass p-3 h-100">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <div class="fw-bold">Achievements</div>
+          <div class="chip"><i class="bi bi-trophy-fill me-1"></i>{{ earned }}/{{ total }}</div>
+        </div>
+        <div class="progress mb-1"><div class="progress-bar" style="width: {{ pct }}%;">{{ pct }}%</div></div>
+        <div class="small dim">Your collected titles:
+          {% if earned_titles %}
+            {% for t in earned_titles %}<span class="chip">{{ t }}</span>{% endfor %}
+          {% else %}<span class="text-muted">—</span>{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Boards -->
+  <div class="mb-2"><h2 class="h5" style="font-weight:800; letter-spacing:.2px;">Recent Boards</h2></div>
+  <div class="table-wrap mb-4">
+    {% if attempts and attempts|length > 0 %}
+      <div class="table-responsive">
+        <table class="table table-modern table-hover align-middle mb-0">
+          <thead>
+            <tr>
+              <th style="width:160px;">Date</th>
+              <th style="width:110px;">Level</th>
+              <th>Score</th>
+              <th style="width:160px;">Lines</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in attempts %}
+              {% set score = (a['score']|int) %}
+              {% set score_cls = 'score-good' if score>=85 else ('score-ok' if score>=60 else 'score-bad') %}
+              <tr>
+                <td class="text-nowrap"><i class="bi bi-calendar-event me-1"></i>{{ a['created_at'] }}</td>
+                <td><span class="chip"><i class="bi bi-mortarboard me-1"></i>Lv {{ a['level'] }}</span></td>
+                <td>
+                  <div class="d-flex flex-column gap-1">
+                    <div class="progress progress-tiny">
+                      <div class="progress-bar" style="width: {{ score }}%;"></div>
+                    </div>
+                    <div class="score-label {{ score_cls }}">{{ score }}% <span class="text-secondary fw-normal">({{ a['total'] }} cells)</span></div>
+                  </div>
+                </td>
+                <td>
+                  <div class="line-dots">
+                    {% for i in range(0,6) %}
+                      <span class="dot {% if i < (a['lines_completed']|int) %}on{% endif %}"></span>
+                    {% endfor %}
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="p-3 dim">No attempts yet. Play a board to see your history here.</div>
+    {% endif %}
+  </div>
+
+  <!-- Storybook Recommendations -->
+  <div class="d-flex align-items-center justify-content-between mb-2">
+    <h2 class="h5 mb-0" style="font-weight:800; letter-spacing:.2px;">Storybook Recommendations</h2>
+    <div class="small dim">Search by keyword, category, or theme.</div>
+  </div>
+  <div class="card-glass p-3 mb-3">
+    <form id="recForm" class="row g-2">
+      <div class="col-sm-3"><input class="form-control" name="q" placeholder="Keyword (e.g., animals)" /></div>
+      <div class="col-sm-2"><input class="form-control" name="category" placeholder="Category (e.g., fantasy)" /></div>
+      <div class="col-sm-2"><input class="form-control" name="theme" placeholder="Theme (e.g., friendship)" /></div>
+      <div class="col-sm-2">
+        <select class="form-select" name="difficulty">
+          <option value="">Difficulty</option>
+          <option value="1">1 • Beginner</option>
+          <option value="2">2 • Novice</option>
+          <option value="3">3 • Intermediate</option>
+          <option value="4">4 • Advanced</option>
+          <option value="5">5 • Expert</option>
+        </select>
+      </div>
+      <div class="col-sm-2"><input class="form-control" type="number" name="age" placeholder="Age" min="5" max="18"/></div>
+      <div class="col-sm-1 d-grid">
+        <button class="chip" style="border-width:1px"><i class="bi bi-search me-1"></i> Search</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="recList" class="row g-3 mb-5"></div>
+
+  <!-- Personal Vocabulary Notebook -->
+  <div class="d-flex align-items-center justify-content-between mb-2">
+    <h2 class="h5 mb-0" style="font-weight:800; letter-spacing:.2px;">Personal Vocabulary Notebook</h2>
+    <div class="small dim">Auto-filled from stories.</div>
+  </div>
+  <div class="table-wrap">
+    {% if vocab_rows and vocab_rows|length > 0 %}
+      <div class="table-responsive">
+        <table class="table table-modern table-hover align-middle mb-0">
+          <thead>
+            <tr>
+              <th style="width:220px;">Word</th>
+              <th style="width:120px;">KR</th>
+              <th>EN Definition</th>
+              <th style="width:140px;">Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for v in vocab_rows %}
+              <tr>
+                <td>
+                  <a href="#" class="word-chip vocab-define">
+                    <i class="bi bi-bookmark"></i> {{ v['word'] }}
+                  </a>
+                </td>
+                <td>
+                  {% if v['translation'] %}
+                    <span class="kr-badge">{{ v['translation'] }}</span>
+                  {% else %}
+                    <span class="text-secondary">—</span>
+                  {% endif %}
+                </td>
+                <td class="small"><div class="clamp-2">{{ v['definition'] or '—' }}</div></td>
+                <td class="small text-secondary">{{ v['created_at'] }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="p-3 dim">No vocabulary yet. Open a story to auto-collect words.</div>
+    {% endif %}
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+const recForm = document.getElementById('recForm');
+const recList = document.getElementById('recList');
+
+recForm.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const fd = new FormData(recForm);
+  const params = new URLSearchParams(fd);
+  const r = await fetch(`/api/recommend_stories?${params.toString()}`);
+  const data = await r.json();
+  renderRecs(data.items || []);
+});
+
+function renderRecs(items){
+  recList.innerHTML = '';
+  if (!items.length){
+    recList.innerHTML = '<div class="dim">No results. Try different keywords.</div>';
+    return;
+  }
+  for (const it of items){
+    const col = document.createElement('div');
+    col.className = 'col-12 col-sm-6 col-lg-4';
+    col.innerHTML = `
+      <div class="book-card p-3 h-100 d-flex gap-3">
+        <div style="width:84px;height:112px;border-radius:10px;background:#eef3ff;border:1px solid #e2ebff;overflow:hidden;flex:0 0 84px;display:flex;align-items:center;justify-content:center">
+          ${it.cover ? `<img src="${it.cover}" alt="" style="width:100%;height:100%;object-fit:cover">` : `<i class="bi bi-book" style="font-size:1.6rem;color:#3b82f6"></i>`}
+        </div>
+        <div class="flex-grow-1">
+          <div class="fw-bold">${escapeHtml(it.title)}</div>
+          <div class="small text-secondary mb-2">by ${escapeHtml(it.author || 'Unknown')}</div>
+          <div class="d-flex flex-wrap gap-1 mb-2">
+            ${[...(it.categories||[])].slice(0,2).map(c=>`<span class="badge badge-tone">${escapeHtml(c)}</span>`).join('')}
+            ${[...(it.themes||[])].slice(0,1).map(t=>`<span class="badge badge-tone">${escapeHtml(t)}</span>`).join('')}
+          </div>
+          <a class="chip" href="/story/${it.slug}">
+            <i class="bi bi-book-half me-1"></i> Read
+          </a>
+        </div>
+      </div>`;
+    recList.appendChild(col);
+  }
+}
+
+function escapeHtml(s){return String(s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m]));}
+</script>
+</body>
+</html>

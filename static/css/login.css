@@ -1,0 +1,78 @@
+:root{
+  /* same tokens as index */
+  --ink:#0e1b35; --muted:#4b5567; --bg:#ffffff; --bg-soft:#f7f9ff;
+  --grid:#0e1b3514; --brand:#3b82f6; --accent:#8f9bff; --ring:#cfe2ff;
+}
+
+*{ box-sizing:border-box }
+html,body{ height:100% }
+body{
+  font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  color:var(--ink);
+  background:
+    radial-gradient(36vmax 36vmax at 15% 20%, #e8f0ff 0%, transparent 70%),
+    radial-gradient(32vmax 32vmax at 85% 10%, #eef4ff 0%, transparent 70%),
+    radial-gradient(30vmax 30vmax at 15% 85%, #f4f8ff 0%, transparent 70%),
+    var(--bg);
+}
+
+/* center */
+.sign-in__wrapper{
+  min-height:100svh;
+  display:grid; place-items:center;
+  padding:24px;
+}
+
+/* card */
+.form{
+  width:min(420px,92vw);
+  background:linear-gradient(180deg,#ffffff,#f7faff);
+  border:1px solid #e6ecff;
+  border-radius:18px;
+  padding:20px 18px 18px;
+  box-shadow:0 24px 60px rgba(13,31,64,.10);
+}
+
+/* heading */
+.form-title{
+  font-weight:800; letter-spacing:.2px;
+  font-size:clamp(20px,2.2vw,24px);
+  color:#111a2e; margin-bottom:10px;
+}
+
+/* labels + inputs */
+.form-label{ font-weight:700; color:#1f2b46; font-size:.92rem }
+.form-control{
+  border-radius:12px;
+  border:1px solid #e6ecff;
+  background:#fff;
+  padding:.6rem .75rem;
+}
+.form-control:focus{
+  border-color:#bfd3ff;
+  box-shadow:0 0 0 4px rgba(59,130,246,.15);
+}
+
+/* remember line + helper text */
+.remember-line{ margin-top:4px }
+.small-note{ color:#60719a; font-weight:600 }
+.link-like{ color:#0e1b35; font-weight:800; text-decoration:none }
+.link-like:hover{ text-decoration:underline }
+
+/* gradient brand button to match index */
+.btn-brand{
+  border:0;
+  border-radius:14px;
+  font-weight:800;
+  padding:.6rem .9rem;
+  color:#fff;
+  background:linear-gradient(90deg,var(--brand),var(--accent));
+  box-shadow:0 10px 24px rgba(59,130,246,.25);
+}
+.btn-brand:hover{ filter:brightness(.98) }
+.btn-brand:active{ transform:translateY(1px) }
+
+/* tighten bootstrap spacing a bit on small screens */
+@media (max-width: 420px){
+  .form{ padding:18px 14px }
+}

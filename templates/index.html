@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>InterLang</title>
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/aos/2.3.4/aos.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="../static/css/styles.css"/>
+<link rel="icon" href="{{ url_for('static', filename='img/favicon.png') }}" sizes="32x32">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" sizes="180x180">
+
+<style>
+:root{
+  /* Light theme tokens */
+  --ink:#0e1b35;               /* primary text */
+  --muted:#4b5567;             /* secondary text */
+  --bg:#ffffff;                /* page background */
+  --bg-soft:#f7f9ff;           /* soft panel/bg wash */
+  --grid:#0e1b3514;            /* light grid lines */
+  --brand:#3b82f6;             /* primary brand (blue) */
+  --accent:#8f9bff;            /* accent gradient end */
+  --ring:#cfe2ff;              /* light ring/border */
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  color:var(--ink); background:var(--bg); overflow-x:hidden;
+}
+.hero { z-index: 0; position: relative; }
+
+
+.wrap[data-aos] { transform: none !important; }
+/* ===== Background stack: airy blobs + subtle grid + cursor glow ===== */
+.hero-bg{ position:fixed; inset:0; z-index:-3; overflow:hidden; }
+.hero-bg::before{
+  content:""; position:absolute; inset:-20vmax; filter:blur(60px); opacity:.9;
+  background:
+    radial-gradient(36vmax 36vmax at 15% 20%, #e8f0ff 0%, transparent 70%),
+    radial-gradient(32vmax 32vmax at 85% 10%, #eef4ff 0%, transparent 70%),
+    radial-gradient(30vmax 30vmax at 15% 85%, #f4f8ff 0%, transparent 70%),
+    conic-gradient(from 210deg at 70% 40%, rgba(110,168,254,.22), rgba(143,155,255,.18), rgba(110,168,254,.16), transparent 60%);
+  animation:meshShift 24s ease-in-out infinite alternate;
+}
+@keyframes meshShift{
+  0%{transform:translate3d(0,0,0) scale(1)}
+  50%{transform:translate3d(-2vmax,1vmax,0) scale(1.02)}
+  100%{transform:translate3d(2vmax,-1vmax,0) scale(1.01)}
+}
+
+/* light animated grid */
+.grid{
+  position:absolute; inset:-4rem; z-index:-2; opacity:.35;
+  background:
+    repeating-linear-gradient(0deg, var(--grid) 0 1px, transparent 1px 32px),
+    repeating-linear-gradient(90deg, var(--grid) 0 1px, transparent 1px 32px);
+  transform:perspective(800px) rotateX(55deg) translateY(20%);
+  animation:gridDrift 22s linear infinite;
+  mask-image: radial-gradient(60% 60% at 50% 40%, black 40%, transparent 100%);
+}
+@keyframes gridDrift{
+  0%{background-position:0 0, 0 0}
+  100%{background-position:0 64px, 64px 0}
+}
+
+/* cursor-follow glow (very subtle) */
+.glow{
+  position:absolute; inset:0; z-index:-1; pointer-events:none;
+  background: radial-gradient(22rem 22rem at var(--mx,50%) var(--my,50%),
+             rgba(59,130,246,.12), rgba(143,155,255,.08) 38%, transparent 60%);
+  transition: background-position .12s linear;
+  mix-blend-mode:screen;
+}
+
+/* ===== Hero ===== */
+.hero{
+  min-height:calc(100svh - 56px);
+  display:grid; place-items:center; padding:88px 18px 72px;
+}
+.wrap{
+  width:100%; max-width:1100px; margin-inline:auto;
+  display:grid; gap:26px; align-items:center;
+  grid-template-columns: 1.1fr .9fr;
+}
+@media (max-width: 992px){
+  .wrap{ grid-template-columns: 1fr; text-align:center }
+}
+
+/* left column (title/sub in dark text) */
+.title{
+  font-weight:800; line-height:1.08; letter-spacing:.2px; margin:0 0 8px 0;
+  font-size:clamp(22px,3.4vw,34px);
+  color:#111a2e;
+}
+.sub{
+  color:var(--muted);
+  font-size:clamp(14px,1.5vw,16px);
+  max-width:60ch;
+}
+.actions{ display:flex; flex-wrap:wrap; gap:.6rem; margin-top:12px }
+.actions .btn{ border-radius:14px; padding:.5rem .9rem; font-weight:700; font-size:.92rem }
+.btn-brand{
+  background:linear-gradient(90deg,var(--brand),var(--accent)); color:white; border:0;
+  box-shadow:0 6px 16px rgba(59,130,246,.25);
+}
+.btn-ghost{
+  border:1px solid #d9e2ff; color:#223357; background:#ffffffaa; backdrop-filter:blur(6px);
+}
+
+/* feature strip (light chips) */
+.features{ display:flex; flex-wrap:wrap; gap:.4rem .6rem; margin-top:8px }
+.badge-soft{
+  border:1px solid #e7edff;
+  background:linear-gradient(180deg, #ffffff, #f3f7ff);
+  color:#32415f; padding:.22rem .55rem; border-radius:999px; font-size:.78rem; font-weight:700
+}
+
+/* right column (image) */
+.stage{
+  position:relative; aspect-ratio:1/1; max-width:520px; width:min(58vh,520px);
+  margin-inline:auto;
+}
+.hero-img{
+  width:100%; height:100%; object-fit:contain;
+  border-radius:18px; border:1px solid #e6ecff; background:#ffffff;
+  box-shadow:0 20px 60px rgba(13,31,64,.12);
+}
+
+/* divider */
+.rule{
+  width:min(460px,60vw); height:2px; margin:12px 0 0;
+  background:linear-gradient(90deg,transparent,#cfe0ff,#e0e7ff,transparent);
+  filter:blur(.15px); opacity:.9;
+}
+
+/* Prefer reduced motion */
+@media (prefers-reduced-motion:reduce){
+  .hero-bg::before,.grid,.glow{ animation:none !important }
+}
+
+  /* ===== About section (light theme) ===== */
+:root{
+  /* uses your existing tokens; included here for clarity if needed */
+  --ink:#0e1b35; --muted:#4b5567; --bg:#ffffff; --bg-soft:#f7f9ff;
+  --grid:#0e1b3514; --brand:#3b82f6; --accent:#8f9bff; --ring:#cfe2ff;
+}
+
+.about-section{
+  position:relative;
+  padding:88px 18px 84px;
+  background: transparent; /* sits after hero */
+}
+.about-wrap{
+  max-width:1100px; margin-inline:auto;
+  display:grid; gap:32px; align-items:center;
+  grid-template-columns: 1.05fr .95fr;
+}
+@media (max-width: 992px){
+  .about-wrap{ grid-template-columns:1fr; text-align:center }
+}
+
+/* Left column */
+.about-overline{
+  display:inline-flex; align-items:center; gap:.5rem;
+  font-weight:800; font-size:.78rem; letter-spacing:.06em;
+  padding:.28rem .6rem; border-radius:999px;
+  color:#1f2b46; background:#eef4ff; border:1px solid #d9e6ff;
+}
+.about-title{
+  margin:10px 0 8px; font-weight:800; letter-spacing:.2px;
+  font-size:clamp(22px,3.2vw,32px); color:#1f2b46;
+}
+.about-lead{
+  color:#46516a; font-size:clamp(14px,1.4vw,16px);
+  margin:0 0 14px; max-width:62ch;
+  margin-inline:0;
+}
+.about-points{
+  list-style:none; padding:0; margin:10px 0 0; display:grid; gap:10px;
+}
+.about-points li{
+  display:flex; align-items:flex-start; gap:.6rem;
+  background:linear-gradient(180deg,#fff,#f6f9ff);
+  border:1px solid #e6ecff; border-radius:12px;
+  padding:.55rem .7rem; color:#2f3b57; font-weight:600;
+  font-size: 14px;
+}
+.about-points i{ color:var(--brand) }
+
+/* Mini stats */
+.about-stats{ display:flex; flex-wrap:wrap; gap:10px 16px; margin-top:16px; color:#32415f }
+.about-stat{
+  display:flex; align-items:baseline; gap:.4rem;
+  background:#fff; border:1px solid #e6ecff; border-radius:12px; padding:.5rem .65rem;
+}
+.about-stat b{ color:#32415f; font-size:1rem }
+.about-stat small{ color:#60719a; font-weight:700 }
+
+/* Right column: image stack */
+.about-gallery{
+  position:relative; width:min(560px,92vw); margin-inline:auto;
+}
+.about-img{
+  position:relative; border-radius:16px; overflow:hidden; background:#fff;
+  border:1px solid #e6ecff; box-shadow:0 20px 60px rgba(13,31,64,.12);
+}
+.about-img img{ width:100%; height:100%; object-fit:cover; display:block }
+.about-img-a{ aspect-ratio:4/3 }
+.about-img-b{
+  aspect-ratio:4/3; width:78%;
+  position:absolute; right:-3%; bottom:-8%;
+  transform:rotate(2deg);
+  box-shadow:0 20px 40px rgba(13,31,64,.10);
+}
+
+/* Floating badge on main image */
+.about-badge{
+  position:absolute; top:-12px; left:-12px;
+  background:#ffffff; border:1px solid #dbe6ff; color:#0e1b35;
+  padding:.35rem .6rem; border-radius:999px; font-weight:800; font-size:.78rem;
+  box-shadow:0 8px 24px rgba(13,31,64,.10);
+}
+
+/* Optional: if you want a single tall image instead of two
+.about-img-a{ aspect-ratio:3/4 }
+.about-img-b{ display:none }
+*/
+
+/* Motion preference */
+@media (prefers-reduced-motion:reduce){
+  .about-img-b{ transform:none }
+}
+
+</style>
+</head>
+<body>
+
+<div class="hero-bg">
+  <div class="grid"></div>
+  <div class="glow"></div>
+</div>
+
+{% include 'nav.html' %}
+
+<!-- Override dark nav to light without editing nav.html -->
+<style>
+
+  /* ===== Features: primary grid (light, no cards) ===== */
+.features-section{
+  padding:72px 18px;
+}
+.features-wrap{
+  max-width:1100px; margin-inline:auto;
+}
+.features-head{
+  text-align:center; margin-bottom:22px;
+}
+.features-title{
+  margin:0 0 6px; font-weight:800; letter-spacing:.2px;
+  font-size:clamp(22px,3vw,30px); color:#1f2b46;
+}
+.features-sub{
+  color:var(--muted); font-size:clamp(14px,1.4vw,16px);
+}
+
+/* list as soft rows with separators */
+.feature-list{
+  list-style:none; margin:18px 0 0; padding:0;
+  display:grid; gap:6px;
+}
+.feature-row{
+  display:grid; grid-template-columns:auto 1fr; gap:14px;
+  padding:14px 10px; align-items:start;
+  border-bottom:1px dashed #e2e9ff;
+}
+.feature-row:last-child{ border-bottom:none }
+
+.f-icon{
+  display:grid; place-items:center; width:40px; height:40px; border-radius:12px;
+  background: linear-gradient(180deg, #ffffff, #f1f6ff);
+  border:1px solid #e6ecff; color:#2a3a5a; font-weight:800;
+  box-shadow:0 8px 20px rgba(13,31,64,.08);
+}
+.f-icon i{ font-size:1.1rem; color:#3b82f6 }
+
+.f-copy h3{
+  margin:2px 0 2px; font-size:1rem; font-weight:800; color:#0e1b35;
+}
+.f-copy p{
+  margin:0; color:#4b5567; font-size:.95rem;
+}
+
+/* tiny tags (no cards) */
+.f-tags{ display:flex; flex-wrap:wrap; gap:.4rem; margin-top:8px }
+.f-tags span{
+  border:1px solid #e6ecff; color:#32415f; font-weight:700;
+  background:linear-gradient(180deg,#fff,#f6f9ff);
+  padding:.18rem .5rem; border-radius:999px; font-size:.72rem;
+}
+
+/* responsive tweak: larger touch targets on mobile */
+@media (max-width: 576px){
+  .feature-row{ padding:16px 6px }
+  .f-icon{ width:44px; height:44px }
+}
+
+/* ===== How it works strip (optional) ===== */
+.howit-section{
+  padding:14px 18px 74px;
+}
+.howit-wrap{
+  max-width:1100px; margin-inline:auto;
+  display:grid; gap:14px; grid-template-columns:1fr 1fr 1fr;
+}
+@media (max-width: 992px){ .howit-wrap{ grid-template-columns:1fr } }
+
+.howit-step{
+  display:flex; align-items:flex-start; gap:12px;
+  padding:14px 12px; border:1px solid #e6ecff; border-radius:14px;
+  background:linear-gradient(180deg,#fff,#f7faff);
+  box-shadow:0 10px 26px rgba(13,31,64,.06);
+}
+.howit-dot{
+  display:inline-grid; place-items:center; min-width:34px; height:34px;
+  border-radius:999px; font-weight:800; color:#0e1b35;
+  background:linear-gradient(90deg,var(--brand),var(--accent));
+  color:#fff; border:0;
+}
+.howit-step h4{
+  margin:0 0 4px; font-size:1rem; font-weight:800; color:#0e1b35;
+}
+.howit-step p{
+  margin:0; color:#51607b; font-size:.95rem;
+}
+/* Two-column grid for features + right rail */
+.features-grid{
+  display:grid;
+  grid-template-columns: 1.15fr .85fr;
+  gap:28px;
+}
+@media (max-width: 992px){
+  .features-grid{ grid-template-columns:1fr }
+}
+
+/* Right column timeline rail */
+.flow-rail{
+  position:sticky; top:92px;
+  align-self:start;
+  border:1px solid #e6ecff;
+  border-radius:16px;
+  padding:14px 14px 18px;
+  background:linear-gradient(180deg,#ffffff,#f7faff);
+  box-shadow:0 14px 42px rgba(13,31,64,.08);
+}
+
+/* header & KPIs */
+.flow-head{ display:flex; flex-direction:column; gap:10px; margin-bottom:8px }
+.flow-pill{
+  display:inline-flex; align-items:center; gap:.45rem;
+  align-self:flex-start;
+  padding:.28rem .6rem; border-radius:999px; font-weight:800; font-size:.78rem;
+  color:#0e1b35; background:#fff; border:1px solid #d9e6ff;
+}
+.flow-pill i{ color:#3b82f6 }
+.flow-kpis{ display:flex; flex-wrap:wrap; gap:8px }
+.kpi{
+  display:inline-flex; align-items:baseline; gap:.35rem;
+  padding:.35rem .55rem; border-radius:12px;
+  background:#fff; border:1px solid #e6ecff; color:#223357;
+  font-weight:800;
+}
+.kpi b{ font-size:.95rem }
+.kpi small{ font-size:.72rem; font-weight:700; color:#60719a }
+
+/* segmented progress bar */
+.segbar{ position:relative; height:10px; margin:4px 0 8px; border-radius:999px;
+  background: repeating-linear-gradient(90deg,#eef3ff 0 22px, transparent 22px 26px);
+  border:1px solid #e6ecff; overflow:hidden;
+}
+.segbar span{
+  position:absolute; inset:0; width:calc(var(--f,0.5) * 100%);
+  background:linear-gradient(90deg,#3b82f6,#8f9bff);
+  opacity:.25;
+}
+
+/* vertical timeline */
+.flow-steps{
+  list-style:none; margin:8px 0 0; padding:6px 0 0;
+  position:relative;
+}
+.flow-steps::before{
+  content:""; position:absolute; left:18px; top:0; bottom:0;
+  width:2px; background:linear-gradient(180deg,#dfe7ff,#eaf0ff);
+}
+.flow-step{
+  position:relative; display:grid; grid-template-columns:36px 1fr; gap:10px;
+  padding:12px 4px;
+}
+.flow-step + .flow-step{ margin-top:2px }
+
+.flow-step .num{
+  width:36px; height:36px; border-radius:999px; display:grid; place-items:center;
+  font-weight:800; color:#fff; background:linear-gradient(90deg,#3b82f6,#8f9bff);
+  border:0; box-shadow:0 8px 20px rgba(59,130,246,.20);
+}
+.flow-step .copy h4{
+  margin:1px 0 3px; font-size:1rem; font-weight:800; color:#0e1b35;
+}
+.flow-step .copy p{
+  margin:0; color:#51607b; font-size:.95rem;
+}
+
+/* floating hints inside the rail */
+.flow-hints{
+  display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;
+}
+.flow-hints .hint{
+  display:inline-flex; align-items:center; gap:.4rem;
+  padding:.28rem .55rem; border-radius:999px;
+  background:#fff; border:1px solid #e6ecff; color:#0e1b35; font-weight:800; font-size:.78rem;
+  box-shadow:0 8px 18px rgba(13,31,64,.06);
+}
+.flow-hints .hint i{ color:#3b82f6 }
+
+/* mobile: unstick and relax spacing */
+@media (max-width: 992px){
+  .flow-rail{ position:static }
+  .flow-steps::before{ left:16px }
+}
+/* ===== Modern Contact (split, ultra-minimal) ===== */
+.contact-modern{
+  padding:86px 18px;
+  background: linear-gradient(180deg,#ffffff 0%,#f9fbff 100%);
+}
+.contact-grid{
+  max-width:1100px; margin-inline:auto;
+  display:grid; gap:24px; align-items:center;
+  grid-template-columns: 1.1fr .9fr;
+}
+@media (max-width: 992px){
+  .contact-grid{ grid-template-columns:1fr; text-align:center }
+}
+
+.contact-h{
+  margin:0; font-weight:800;
+  font-size:clamp(28px,4vw,40px); line-height:1.05;
+  letter-spacing:.2px;
+  background:linear-gradient(90deg,#0e1b35,#3b82f6 35%,#8f9bff 75%,#0e1b35);
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+  background-size:200% 100%; animation:contactShimmer 8s ease-in-out infinite;
+}
+@keyframes contactShimmer{
+  0%{ background-position:0% 50% }
+  50%{ background-position:100% 50% }
+  100%{ background-position:0% 50% }
+}
+.contact-sub{
+  margin:8px 0 0; color:#4b5567; font-size:clamp(14px,1.4vw,16px);
+}
+
+/* Right—glass tile */
+.contact-right{ justify-self:end }
+@media (max-width: 992px){ .contact-right{ justify-self:center } }
+
+.contact-tile{
+  display:flex; align-items:center; gap:10px;
+  padding:10px 12px; border-radius:16px;
+  background:linear-gradient(180deg,#ffffff,#f6f9ff);
+  border:1px solid #e6ecff;
+  box-shadow:0 14px 42px rgba(13,31,64,.08);
+  backdrop-filter: blur(6px);
+}
+
+.contact-email{
+  display:inline-block;
+  font-weight:800; letter-spacing:.2px;
+  text-decoration:none; color:#0e1b35;
+  font-size:clamp(16px,1.8vw,18px);
+  padding:.32rem .6rem; border-radius:12px;
+  background:linear-gradient(180deg,#fff,#f3f7ff);
+  border:1px solid #e6ecff;
+}
+.contact-email:hover{ text-decoration:underline }
+
+.contact-copy{
+  display:inline-grid; place-items:center;
+  width:38px; height:38px; border-radius:12px;
+  border:1px solid #e6ecff; background:#fff; color:#3b82f6;
+  cursor:pointer; transition:transform .12s ease;
+}
+.contact-copy:hover{ transform:translateY(-1px); background:#f6f9ff }
+.contact-copy i{ font-size:1rem }
+
+.contact-hint{ display:block; margin-top:8px; color:#60719a; font-weight:700 }
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion:reduce){
+  .contact-h{ animation:none }
+}
+.simple-footer {
+  text-align: center;
+  padding: 20px 10px;
+  font-size: 0.9rem;
+  color: #60719a;
+  background: #f8faff;
+  border-top: 1px solid #e6ecff;
+}
+
+</style>
+
+<section class="hero">
+  <div class="wrap" data-aos="fade-up" data-aos-duration="900">
+    <!-- LEFT -->
+    <div>
+      <h1 class="title" data-aos="fade-up" data-aos-delay="60">
+        Learn languages with focus — not clutter
+      </h1>
+      <div class="rule" data-aos="zoom-in" data-aos-delay="120"></div>
+      <p class="sub" data-aos="fade-up" data-aos-delay="160">
+        Short daily practice, clean visuals, real progress. InterLang keeps you in flow with listening, speaking,
+        and bite-size quizzes that adapt to you.
+      </p>
+
+      <div class="features" data-aos="fade-up" data-aos-delay="220">
+        <span class="badge-soft">Listening</span>
+        <span class="badge-soft">Speaking</span>
+        <span class="badge-soft">Reading</span>
+        <span class="badge-soft">Adaptive Quizzes</span>
+        <span class="badge-soft">Streaks</span>
+      </div>
+
+      <div class="actions" data-aos="fade-up" data-aos-delay="260">
+        <a href="{{ url_for('login') }}" class="btn btn-brand">Start now</a>
+      </div>
+    </div>
+
+    <!-- RIGHT: YOUR IMAGE -->
+    <div class="stage" aria-hidden="true" data-aos="zoom-in" data-aos-delay="120">
+      <img
+        class="hero-img"
+        src="{{ url_for('static', filename='img/landing.png') }}"
+        alt="InterLang preview"
+      />
+    </div>
+  </div>
+</section>
+<section class="about-section" id="about">
+  <div class="about-wrap" data-aos="fade-up" data-aos-duration="900">
+    <!-- LEFT: copy -->
+    <div class="about-copy" data-aos="fade-right" data-aos-delay="60">
+      <span class="about-overline"><i class="bi bi-stars"></i> About InterLang</span>
+      <h2 class="about-title">We build language learning that respects your focus</h2>
+      <p class="about-lead">
+        InterLang is a lightweight way to practice every day without distractions.
+
+      </p>
+
+      <ul class="about-points">
+        <li><i class="bi bi-soundwave"></i> Listening & speaking drills with instant feedback</li>
+        <li><i class="bi bi-journal-text"></i> Reading bites matched to your level</li>
+        <li><i class="bi bi-graph-up-arrow"></i> XP, streaks, and weekly goals to keep momentum</li>
+      </ul>
+
+      <div class="about-stats">
+        <div class="about-stat"><b>10m</b> <small>/ day</small></div>
+        <div class="about-stat"><b>5</b> <small>skills</small></div>
+        <div class="about-stat"><b>∞</b> <small>levels</small></div>
+      </div>
+    </div>
+
+    <!-- RIGHT: images -->
+    <div class="about-gallery" data-aos="fade-left" data-aos-delay="120">
+      <div class="about-img about-img-a">
+        <img src="{{ url_for('static', filename='img/about-main.jpg') }}" alt="Practice preview"/>
+        <span class="about-badge"><i class="bi bi-lightning-charge-fill"></i> Adaptive</span>
+      </div>
+      <div class="about-img about-img-b">
+        <img src="{{ url_for('static', filename='img/about-side.jpg') }}" alt="Streak & XP"/>
+      </div>
+    </div>
+  </div>
+</section>
+<section class="features-section" id="features">
+  <div class="features-wrap features-grid" data-aos="fade-up" data-aos-duration="900">
+    <!-- LEFT: feature list (unchanged content, kept clean) -->
+    <div>
+      <header class="features-head">
+        <h2 class="features-title">Designed to keep you in flow</h2>
+        <p class="features-sub">
+          Short sessions, adaptive practice, and clean visuals — all tuned for real progress.
+        </p>
+      </header>
+
+      <ul class="feature-list">
+        <li class="feature-row" data-aos="fade-up" data-aos-delay="60">
+          <span class="f-icon"><i class="bi bi-soundwave"></i></span>
+          <div class="f-copy">
+            <h3>Listening & Speaking</h3>
+            <p>Targeted drills with instant feedback and pronunciation hints.</p>
+            <div class="f-tags"><span>Pronunciation</span><span>Shadowing</span></div>
+          </div>
+        </li>
+
+        <li class="feature-row" data-aos="fade-up" data-aos-delay="100">
+          <span class="f-icon"><i class="bi bi-journal-text"></i></span>
+          <div class="f-copy">
+            <h3>Reading Bites</h3>
+            <p>Curated micro-texts that match your level and unlock new vocab.</p>
+            <div class="f-tags"><span>CEFR-aware</span><span>Context first</span></div>
+          </div>
+        </li>
+
+        <li class="feature-row" data-aos="fade-up" data-aos-delay="140">
+          <span class="f-icon"><i class="bi bi-graph-up-arrow"></i></span>
+          <div class="f-copy">
+            <h3>Adaptive Quizzes</h3>
+            <p>Difficulty adjusts live, so you’re challenged — never overwhelmed.</p>
+            <div class="f-tags"><span>Smart pacing</span><span>Real gains</span></div>
+          </div>
+        </li>
+
+        <li class="feature-row" data-aos="fade-up" data-aos-delay="180">
+          <span class="f-icon"><i class="bi bi-fire"></i></span>
+          <div class="f-copy">
+            <h3>Streaks & XP</h3>
+            <p>Lightweight motivation that rewards consistency, not grind.</p>
+            <div class="f-tags"><span>Daily 10m</span><span>Weekly goals</span></div>
+          </div>
+        </li>
+      </ul>
+    </div>
+
+    <!-- RIGHT: redesigned “How it works” rail -->
+    <aside class="flow-rail" aria-hidden="false" data-aos="fade-left" data-aos-delay="120">
+      <header class="flow-head">
+        <span class="flow-pill"><i class="bi bi-magic"></i> How it works</span>
+        <div class="flow-kpis">
+          <span class="kpi"><b>10m</b><small>daily</small></span>
+          <span class="kpi"><b>A1–B2</b><small>levels</small></span>
+          <span class="kpi"><b>+XP</b><small>streak</small></span>
+        </div>
+      </header>
+
+      <!-- subtle segmented progress bar -->
+      <div class="segbar" aria-hidden="true">
+        <span style="--f:0.7"></span>
+      </div>
+
+      <ol class="flow-steps">
+        <li class="flow-step">
+          <div class="num">1</div>
+          <div class="copy">
+            <h4>Pick your level</h4>
+            <p>Start anywhere from A1 to B2. We’ll adapt as you progress.</p>
+          </div>
+        </li>
+        <li class="flow-step">
+          <div class="num">2</div>
+          <div class="copy">
+            <h4>Do a 10-minute set</h4>
+            <p>Listening, speaking, and reading blend for better retention.</p>
+          </div>
+        </li>
+        <li class="flow-step">
+          <div class="num">3</div>
+          <div class="copy">
+            <h4>Track steady gains</h4>
+            <p>Earn XP, keep streaks, and hit gentle weekly goals.</p>
+          </div>
+        </li>
+      </ol>
+
+      <!-- tiny floating hints -->
+      <div class="flow-hints">
+        <span class="hint"><i class="bi bi-lightning-charge-fill"></i> Adaptive</span>
+        <span class="hint"><i class="bi bi-soundwave"></i> Speaking</span>
+      </div>
+    </aside>
+  </div>
+</section>
+<section class="contact-modern" id="contact">
+  <div class="contact-grid" data-aos="fade-up" data-aos-duration="900">
+    <div class="contact-left">
+      <h2 class="contact-h">Say hello.</h2>
+      <p class="contact-sub">We reply fast—usually same day.</p>
+    </div>
+
+    <div class="contact-right">
+      <div class="contact-tile">
+        <a href="mailto:hello@interlang.app" class="contact-email" aria-label="Email us">
+          hello@interlang.app
+        </a>
+        <button class="contact-copy" type="button" data-email="hello@interlang.app" aria-label="Copy email">
+          <i class="bi bi-clipboard"></i>
+        </button>
+      </div>
+      <small class="contact-hint" role="status" aria-live="polite"></small>
+    </div>
+  </div>
+</section>
+<footer class="simple-footer">
+  © <span id="year"></span> InterLang. All rights reserved.
+</footer>
+<script>
+  // Auto-update year
+  document.getElementById('year').textContent = new Date().getFullYear();
+</script>
+<script>
+  // Copy email to clipboard
+  document.addEventListener('click', (e)=>{
+    const btn = e.target.closest('.contact-copy');
+    if(!btn) return;
+    const email = btn.getAttribute('data-email');
+    navigator.clipboard.writeText(email).then(()=>{
+      const hint = btn.closest('.contact-modern').querySelector('.contact-hint');
+      if(hint){
+        hint.textContent = 'Email copied';
+        setTimeout(()=> hint.textContent = '', 1200);
+      }
+    });
+  });
+</script>
+
+
+<script>
+  // Copy-to-clipboard for the email (no libraries)
+  document.addEventListener('click', (e)=>{
+    const btn = e.target.closest('.copy-btn');
+    if(!btn) return;
+    const email = btn.getAttribute('data-email');
+    navigator.clipboard.writeText(email).then(()=>{
+      const hint = btn.closest('.contact-card').querySelector('.copy-hint');
+      if(hint){
+        hint.textContent = 'Copied!';
+        setTimeout(()=> hint.textContent = '', 1200);
+      }
+    });
+  });
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/aos/2.3.4/aos.js"></script>
+<script>
+  AOS.init({duration:800, once:true});
+  // Parallax glow follows cursor
+  const glow = document.querySelector('.glow');
+  window.addEventListener('pointermove', (e)=>{
+    const x = (e.clientX / window.innerWidth) * 100;
+    const y = (e.clientY / window.innerHeight) * 100;
+    glow?.style.setProperty('--mx', x + '%');
+    glow?.style.setProperty('--my', y + '%');
+  });
+</script>
+</body>
+</html>

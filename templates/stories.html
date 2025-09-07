@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Stories</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
+  <link rel="icon" href="{{ url_for('static', filename='img/favicon.png') }}" sizes="32x32">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" sizes="180x180">
+
+
+  <style>
+    :root{
+      /* Light theme tokens aligned with nav.html / Home */
+      --ink:#0e1b35;         /* primary text */
+      --muted:#51607d;       /* secondary text */
+      --bg:#ffffff;          /* page background */
+      --bg-soft:#f6f8ff;     /* soft wash */
+      --ring:#cfe2ff;        /* focus ring/border */
+      --brand:#3b82f6;       /* primary blue */
+      --accent:#8f9bff;      /* gradient end */
+      --iris-1:#7aa6ff;      /* highlight 1 */
+      --iris-2:#a1a8ff;      /* highlight 2 */
+      --ok:#16a34a;
+
+      --card-border:#e3eaff;
+      --card-shadow:0 14px 32px rgba(13,31,64,.10);
+      --chip-bg:#ffffff;
+      --chip-br:#e5ebff;
+      --chip-ink:#1e2a4d;
+    }
+
+    html,body{height:100%}
+    body{
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      color:var(--ink); background:var(--bg);
+      /* Soft color washes + faint grid to reduce the “plain white” feel */
+      background-image:
+        radial-gradient(38vmax 38vmax at 12% 6%, #eef4ff 0%, transparent 70%),
+        radial-gradient(34vmax 34vmax at 88% 0%, #f3f6ff 0%, transparent 70%),
+        radial-gradient(30vmax 30vmax at 10% 90%, #f7faff 0%, transparent 70%),
+        linear-gradient(0deg, transparent 0%, transparent 96%, #eef3ff 96%),
+        repeating-linear-gradient(90deg, transparent 0 39px, #0e1b3511 39px 40px);
+      background-attachment: fixed;
+    }
+
+    /* Section header ribbon (color key point) */
+    .section-head{
+      position:relative; border:1px solid var(--card-border);
+      background: linear-gradient(180deg,#fff,#f8faff);
+      border-radius:16px; padding:14px 16px; margin-bottom:14px;
+      box-shadow: var(--card-shadow);
+    }
+    .section-head::before{
+      content:""; position:absolute; left:0; top:0; bottom:0; width:8px;
+      background: linear-gradient(180deg, var(--brand), var(--accent));
+      border-top-left-radius:16px; border-bottom-left-radius:16px;
+    }
+    .section-title{
+      margin:0 0 2px 0; font-weight:900; letter-spacing:.2px;
+      background: linear-gradient(90deg, #0e1b35, #2a3a70);
+      -webkit-background-clip:text; background-clip:text; color:transparent;
+      font-size: clamp(18px, 2.4vw, 20px);
+    }
+    .section-sub{ color:var(--muted); }
+
+    /* Search */
+    .search-card{
+      border: 1px solid var(--card-border);
+      background: linear-gradient(180deg, #fff, #f8faff);
+      border-radius:16px; box-shadow: var(--card-shadow);
+      padding: 14px;
+    }
+    .search-wrap{
+      display:flex; gap:10px; align-items:center;
+      background: #ffffff; border:1px solid var(--card-border);
+      border-radius:999px; padding:8px 12px;
+      box-shadow: inset 0 0 0 2px #f1f5ff;
+      transition: box-shadow .12s ease, border-color .12s ease;
+    }
+    .search-wrap:focus-within{
+      border-color:#d5e4ff; box-shadow: 0 0 0 .25rem #cfe2ff80, inset 0 0 0 2px #e5eeff;
+    }
+    .search-input{
+      border:none; background:transparent; color:var(--ink); width:100%;
+      outline:none; padding:2px 6px; font-size:0.98rem;
+    }
+
+    .btn-ghost{
+      border-radius:999px; border:1px solid var(--card-border);
+      background: linear-gradient(180deg,#fff,#f7faff);
+      color:#0e1b35; font-weight:800;
+      padding:.48rem .95rem; font-size:.92rem;
+      box-shadow: 0 8px 18px rgba(13,31,64,.08);
+      transition: transform .12s ease, filter .12s ease, box-shadow .12s ease;
+    }
+    .btn-ghost:hover{ filter:brightness(1.03); transform: translateY(-1px); box-shadow: 0 14px 24px rgba(13,31,64,.12); }
+    .btn-ghost:focus-visible{ outline:none; box-shadow: 0 0 0 .25rem #cfe2ffcc; }
+
+    .toggle-adv{
+      color:#334b82; text-decoration:none; font-size:.9rem; font-weight:800;
+    }
+    .toggle-adv:hover{ color:#1a2b55; }
+    details.adv{ margin-top:10px; }
+
+    .adv .form-control, .adv .form-select{
+      background:#fff; border:1px solid var(--card-border); color:var(--ink);
+      height: 38px; padding: .25rem .5rem; font-size:.92rem; border-radius:12px;
+    }
+    .adv label{ color:#5a6a8f; font-size:.8rem; margin-bottom:4px; font-weight:800; }
+
+    /* Book tiles (bright, with stronger accents) */
+    .book-tile{
+      display:block; text-decoration:none; color:inherit;
+      border:1px solid var(--card-border); border-radius:14px;
+      background:
+        linear-gradient(180deg, #ffffff, #f7faff);
+      padding:12px 14px 12px 18px;
+      position:relative; overflow:hidden;
+      transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+      box-shadow: 0 10px 22px rgba(13,31,64,.07);
+    }
+    .book-tile:hover{
+      transform: translateY(-2px);
+      border-color:#d9e6ff;
+      box-shadow: 0 18px 34px rgba(13,31,64,.12);
+    }
+    /* Accent spine + corner glow (key color point) */
+    .book-tile::before{
+      content:""; position:absolute; left:0; top:0; bottom:0; width:8px;
+      background: linear-gradient(180deg, var(--brand), var(--accent));
+    }
+    .book-tile::after{
+      content:""; position:absolute; right:-30px; top:-30px; width:140px; height:140px; border-radius:50%;
+      background: radial-gradient(closest-side, #a9b4ff33, transparent 65%);
+      filter: blur(8px);
+    }
+
+    .tile-title{ font-weight:900; color:#0f1a33; line-height:1.25; font-size:1.02rem; margin-bottom:4px; }
+    .tile-author{ color:var(--muted); font-size:.9rem; margin-bottom:10px; }
+
+    .chip{
+      display:inline-flex; align-items:center; gap:6px; padding:.2rem .6rem; border-radius:999px;
+      background:var(--chip-bg); border:1px solid var(--chip-br); color:var(--chip-ink);
+      font-weight:900; font-size:.75rem;
+      box-shadow: 0 2px 0 #eaf0ff;
+    }
+    .chip i{ font-size:.9rem; }
+    .meta-stack{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
+
+    .cats{ display:flex; gap:6px; flex-wrap:wrap; }
+    .cat{
+      font-size:.72rem; color:#1f2b46; border:1px dashed var(--card-border);
+      padding:.1rem .5rem; border-radius:999px; background:#fff; font-weight:700;
+    }
+    /* Tiny variation so tags feel lively */
+    .cats .cat:nth-child(3n+1){ background:#f2f7ff; border-color:#dbe7ff; }
+    .cats .cat:nth-child(3n+2){ background:#f7f4ff; border-color:#e6e1ff; }
+    .cats .cat:nth-child(3n+3){ background:#fff6ef; border-color:#ffe7d1; }
+
+    .tile-row{ display:flex; align-items:start; gap:12px; }
+    .arrow{ margin-left:auto; color:#1f2b46; opacity:.65; transition: transform .12s ease, opacity .12s ease; }
+    .book-tile:hover .arrow{ transform: translateX(3px); opacity:1; }
+
+    /* Empty state */
+    .empty-note{
+      color:var(--muted);
+      background: linear-gradient(180deg, #fff, #f7faff);
+      border:1px dashed var(--card-border); border-radius:14px; padding:16px;
+      text-align:center; font-weight:700;
+      box-shadow: 0 10px 24px rgba(13,31,64,.06);
+    }
+
+    /* Loader (light) */
+    .page-loader {
+      position: fixed; inset: 0; display: none; place-items: center;
+      background:
+        radial-gradient(900px 600px at 90% -10%, rgba(110,168,254,.18), transparent 60%),
+        radial-gradient(900px 600px at 10% 110%, rgba(143,155,255,.18), transparent 60%),
+        rgba(255, 255, 255, .85);
+      z-index: 2000; backdrop-filter: blur(6px);
+    }
+    .page-loader.show { display: grid; }
+    .loader-card {
+      width: min(460px, 88vw);
+      border: 1px solid var(--card-border);
+      border-radius: 14px; padding: 18px 18px 16px;
+      background: linear-gradient(180deg, #fff, #f7faff);
+      box-shadow: 0 20px 50px rgba(13,31,64,.10);
+      text-align: center; color: var(--ink);
+    }
+    .loader-title { font-weight: 900; letter-spacing: .2px; }
+    .loader-sub { color:var(--muted); font-size:.92rem; }
+    .loader-bar { height: 10px; background: #eef3ff; border:1px solid var(--card-border); border-radius: 999px; overflow: hidden; margin-top: 10px; }
+    .loader-bar > div { height: 100%; width: 0%; background: linear-gradient(90deg, var(--brand), var(--accent)); transition: width .12s linear; }
+    .loader-pct { font-weight: 900; margin-top: 8px; color:#1c2a4a; }
+  </style>
+</head>
+<body>
+  {% include 'nav.html' %}
+
+  <div class="container pb-5 mt-4">
+    <!-- Section header (adds a color accent “key point”) -->
+    <div class="section-head">
+      <div class="section-title">Stories</div>
+      <div class="section-sub">Browse by keyword, category, theme, age, or difficulty.</div>
+    </div>
+
+    <!-- Search -->
+    <div class="search-card mb-4">
+      <form method="get" action="{{ url_for('stories') }}">
+        <div class="d-flex gap-2 align-items-center">
+          <div class="flex-grow-1 search-wrap">
+            <i class="bi bi-search" style="color:#5d6d95;"></i>
+            <input class="search-input" name="q" value="{{ q or '' }}" placeholder="Search stories by title, keyword, or theme…">
+          </div>
+          <button class="btn-ghost" type="submit"><i class="bi bi-sliders2-vertical me-1"></i>Search</button>
+        </div>
+
+        <details class="adv">
+          <summary class="mt-2"><a class="toggle-adv" href="javascript:void(0)">More filters</a></summary>
+          <div class="row g-2 mt-1">
+            <div class="col-6 col-md-3">
+              <label class="form-label">Category</label>
+              <input class="form-control" name="category" value="{{ category or '' }}" placeholder="Animals">
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label">Theme</label>
+              <input class="form-control" name="theme" value="{{ theme or '' }}" placeholder="Friendship">
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label">Age</label>
+              <input type="number" min="3" max="18" name="age" value="{{ age or '' }}" class="form-control" placeholder="10">
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label">Difficulty</label>
+              <select name="difficulty" class="form-select">
+                <option value="" {% if not difficulty %}selected{% endif %}>Any</option>
+                {% for d in range(1,6) %}
+                  <option value="{{ d }}" {% if difficulty==d %}selected{% endif %}>{{ d }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+        </details>
+      </form>
+    </div>
+
+    <!-- Results -->
+    <div class="row g-2 g-md-3">
+      {% for s in items %}
+        <div class="col-12 col-sm-6 col-lg-4">
+          <a class="book-tile read-link" href="{{ url_for('read_story', slug=s.slug) }}">
+            <div class="tile-row">
+              <div class="w-100">
+                <div class="tile-title">{{ s.title }}</div>
+                <div class="tile-author">by {{ s.author }}</div>
+
+                <div class="meta-stack">
+                  <span class="chip"><i class="bi bi-people"></i> Age {{ s.age_min }}–{{ s.age_max }}</span>
+                  <span class="chip"><i class="bi bi-graph-up"></i> Diff {{ s.difficulty }}</span>
+                </div>
+
+                {% if s.categories %}
+                  <div class="cats">
+                    {% for c in s.categories[:3] %}
+                      <span class="cat">{{ c }}</span>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </div>
+              <i class="bi bi-arrow-right-short arrow fs-4"></i>
+            </div>
+          </a>
+        </div>
+      {% endfor %}
+
+      {% if not items %}
+        <div class="col-12">
+          <div class="empty-note"><i class="bi bi-search"></i> No stories found. Try a different search.</div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Loader -->
+  <div class="page-loader" id="page-loader" aria-hidden="true">
+    <div class="loader-card">
+      <div class="loader-title h5 mb-1"><i class="bi bi-book"></i> Preparing your story…</div>
+      <div class="loader-sub">We’re highlighting vocabulary and getting definitions ready.</div>
+      <div class="loader-bar"><div id="loader-bar"></div></div>
+      <div class="loader-pct" id="loader-pct">0%</div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    (function(){
+      const overlay = document.getElementById('page-loader');
+      const bar = document.getElementById('loader-bar');
+      const pctEl = document.getElementById('loader-pct');
+
+      function animateTo(target, cb){
+        let pct = 0;
+        const tick = () => {
+          const step = Math.max(1, Math.round((target - pct) * 0.2));
+          pct = Math.min(target, pct + step);
+          bar.style.width = pct + '%';
+          pctEl.textContent = pct + '%';
+          if (pct < target) setTimeout(tick, 60); else cb && cb();
+        };
+        tick();
+      }
+
+      function startLoaderAndGo(url){
+        if (!overlay) { window.location.href = url; return; }
+        overlay.classList.add('show');
+        overlay.setAttribute('aria-hidden','false');
+        const target = 72 + Math.floor(Math.random() * 6);
+        animateTo(target, () => {
+          try { sessionStorage.setItem('loaderStart', String(target)); } catch(e){}
+          setTimeout(() => { window.location.href = url; }, 120);
+        });
+      }
+
+      document.addEventListener('click', (e) => {
+        const a = e.target.closest('a.read-link');
+        if (!a) return;
+        e.preventDefault();
+        startLoaderAndGo(a.getAttribute('href'));
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Level {{ level }} • Bingo Quiz</title>
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <link rel="icon" href="{{ url_for('static', filename='img/favicon.png') }}" sizes="32x32">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" sizes="180x180">
+
+
+<style>
+:root{
+  /* Light shell tokens (match nav.html / Home) */
+  --ink:#0e1b35; --muted:#4b5567; --bg:#ffffff; --bg-soft:#f7f9ff; --ring:#cfe2ff;
+  --brand:#3b82f6; --accent:#8f9bff; --ok:#22c55e; --red:#ef4444;
+
+  /* Dark board tokens (kept for the game area) */
+  --navy-900:#0b1220; --navy-800:#0e1730;
+  --glass: rgba(19,27,46,.72);
+  --t-mcq:#60a5fa; --t-short:#a78bfa; --t-long:#f59e0b;
+}
+
+/* Light page background to match navbar */
+html,body{height:100%}
+body{
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  color:var(--ink); background:var(--bg);
+  background-image:
+    radial-gradient(36vmax 36vmax at 12% 6%, #eef4ff 0%, transparent 70%),
+    radial-gradient(32vmax 32vmax at 88% 0%, #f3f6ff 0%, transparent 70%),
+    radial-gradient(30vmax 30vmax at 10% 90%, #f7faff 0%, transparent 70%);
+  background-attachment: fixed;
+}
+
+/* Light chips (HUD) */
+.pill{
+  background:linear-gradient(180deg,#fff,#f3f7ff);
+  color:#223357; border:1px solid #e6ecff; font-weight:800;
+  border-radius:999px; padding:.38rem .8rem; display:inline-flex; align-items:center; gap:.5rem;
+  box-shadow:0 6px 16px rgba(13,31,64,.06);
+}
+
+/* Game glass cards keep dark vibe for focus */
+.glass{
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  border:1px solid rgba(255,255,255,.10) !important;
+  border-radius:22px;
+  box-shadow: 0 14px 50px rgba(4,10,28,.30);
+  color:#e9eefb; /* ensure readable inside dark glass */
+}
+
+/* Progress */
+.progress{ height:12px; background:#eef3ff; border:1px solid #e2ebff; border-radius:999px; }
+.progress-bar{
+  background-image: linear-gradient(90deg, var(--brand), var(--accent));
+  background-size: 200% 100%; animation: move 3s linear infinite;
+}
+@keyframes move{0%{background-position:0 0}100%{background-position:200% 0}}
+
+/* Board grid */
+.board{ display:grid; grid-template-columns:repeat(4, 1fr); gap:.9rem; }
+
+/* Cell (unchanged dark style for drama/contrast) */
+.cell{
+  position:relative; min-height:140px; border-radius:18px; cursor:pointer; overflow:hidden;
+  background:
+    radial-gradient(600px 220px at 50% -40%, rgba(110,168,254,.18), transparent 60%),
+    linear-gradient(180deg, rgba(22,32,65,.95), rgba(15,23,46,.96));
+  border:1px solid rgba(255,255,255,.10);
+  transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+  perspective: 900px; isolation: isolate;
+}
+.cell:hover{ transform:translateY(-2px); box-shadow:0 16px 40px rgba(0,0,0,.35) }
+.cell.correct{ border-color:#38d878; }
+.cell.wrong{ border-color:#f08c8c; }
+.cell.locked{ pointer-events:none; opacity:.92; }
+.cell.locked:hover{ transform:none; box-shadow:none }
+.cell::before{
+  content:""; position:absolute; inset:0; border-radius:inherit; padding:1px;
+  background: conic-gradient(from 180deg, rgba(143,155,255,.45), rgba(110,168,254,.45), rgba(143,155,255,.45));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  opacity:.3; animation: spin 9s linear infinite;
+}
+@keyframes spin{ to{ transform: rotate(1turn); } }
+
+.cell .inner{ position:absolute; inset:0; transform-style: preserve-3d; transition: transform .45s cubic-bezier(.2,.7,.2,1); }
+.cell.flipped .inner{ transform: rotateY(180deg); }
+.face{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:1rem; backface-visibility:hidden; }
+
+/* FRONT */
+.face.front{ text-align:center; color:#dbe6ff; }
+.type-emblem{
+  display:inline-flex; align-items:center; gap:.75rem; padding:.65rem .9rem;
+  border-radius:14px; font-weight:800; letter-spacing:.4px; font-size:1.05rem;
+  color:#0d1430; background: #e7eeff;
+  box-shadow: inset 0 0 0 1px rgba(16,33,67,.12), 0 8px 22px rgba(0,0,0,.28);
+}
+.type-emblem i{ font-size:1.25rem; }
+.em-mcq{ background:linear-gradient(135deg, #dbeafe, #e0ecff); color:#0b2a4c; }
+.em-short{ background:linear-gradient(135deg, #ede9fe, #efeaff); color:#2a0b4c; }
+.em-long{ background:linear-gradient(135deg, #fef3c7, #fff2d7); color:#3f2504; }
+.front-cta{ margin-top:.55rem; color:#cbd5e1; font-weight:600; opacity:.95; letter-spacing:.2px; font-size:.9rem; }
+
+/* BACK */
+.face.back{ transform: rotateY(180deg); color:#dfe8ff; font-weight:700; font-size:1.1rem; }
+
+/* result chip */
+.cell .badge-done{
+  position:absolute; bottom:.55rem; right:.55rem;
+  background:rgba(255,255,255,.09); border:1px solid rgba(255,255,255,.15);
+  border-radius:999px; padding:.25rem .55rem; font-size:.82rem; z-index:2; color:#fff;
+}
+
+/* Modal (kept dark for immersion) */
+.modal-content{
+  background:linear-gradient(180deg, rgba(20,26,44,.96), rgba(12,19,38,.98));
+  border:1px solid rgba(255,255,255,.08); color:#e6eeff; border-radius:18px;
+}
+.modal-header{ border-bottom:1px solid rgba(255,255,255,.08); }
+.modal-footer{ border-top:1px solid rgba(255,255,255,.08); }
+.modal .form-text{ color:#b9c6e4 !important; }
+.badge-type{ border-radius:999px; padding:.35rem .7rem; font-weight:800; letter-spacing:.3px; }
+.badge-mcq{ background:rgba(96,165,250,.18); color:#cfe6ff; border:1px solid rgba(96,165,250,.35);}
+.badge-short{ background:rgba(167,139,250,.18); color:#efe6ff; border:1px solid rgba(167,139,250,.35);}
+.badge-long{ background:rgba(245,158,11,.18); color:#fff3d6; border:1px solid rgba(245,158,11,.35);}
+
+.option-btn{
+  border:1px solid #293241 !important;
+  background:linear-gradient(180deg, rgba(23,32,57,.92), rgba(17,26,46,.92)) !important;
+  color:#e5e7eb !important; padding:14px 16px !important; border-radius:14px !important;
+  transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease, background .12s ease;
+}
+.option-btn:hover{ transform:translateY(-2px); box-shadow:0 8px 24px rgba(0,0,0,.25) }
+.option-btn.sel{ border-color:#7cc2ff!important; box-shadow:0 0 0 .25rem var(--ring) }
+.option-btn.correct{ border-color:#38d878!important; background:linear-gradient(145deg, rgba(34,197,94,.10), transparent)!important; }
+.option-btn.wrong{ border-color:#f08c8c!important; background:linear-gradient(145deg, rgba(248,113,113,.10), transparent)!important; }
+
+.quiz-input{ background:#0b1220; color:#e5e7eb; border:1px solid #293241; padding:14px 16px; border-radius:14px; }
+.quiz-input:focus{ border-color:#7cc2ff; box-shadow:0 0 0 .25rem var(--ring) }
+
+/* Buttons (no .btn-primary; use existing) */
+.btn-ghost{border:1px solid #334155; color:#e5e7eb; background:transparent}
+.btn-ghost:hover{border-color:#64748b; background:rgba(255,255,255,.06)}
+.btn-gradient{ border:none; color:#07110a; font-weight:800; background-image:linear-gradient(90deg,#16a34a,#22c55e); }
+.btn-gradient:hover{filter:brightness(1.05)}
+
+/* Alerts + toast */
+.alert-success{background:rgba(34,197,94,.12); border-color:#14532d; color:#c7f9d4}
+.alert-danger{background:rgba(239,68,68,.12); border-color:#7f1d1d; color:#fecaca}
+.toastline{
+  position:fixed; right:1rem; bottom:1rem; background:rgba(34,197,94,.15); border:1px solid #14532d;
+  padding:.65rem .9rem; border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,.35); z-index:9999; display:none; color:#0b3b22; backdrop-filter: blur(2px);
+}
+
+/* Soft helper text */
+.dim{ color:var(--muted) }
+</style>
+</head>
+<body>
+
+<!-- Include global navbar (light) -->
+{% include 'nav.html' %}
+
+<div class="container pb-5 mt-4">
+  <!-- HUD (dark glass on light page for contrast) -->
+  <div class="glass p-3 mb-3">
+    <div class="d-flex align-items-center gap-3 flex-wrap">
+      <div class="me-auto d-flex align-items-center gap-2">
+        <span class="pill" id="lifeChip"><i class="bi bi-heart-fill"></i> Lives 3</span>
+        <span class="pill" id="xpChip"><i class="bi bi-stars"></i> XP 0</span>
+        <span class="pill" id="lineChip"><i class="bi bi-grid-3x3"></i> Lines 0</span>
+      </div>
+      <div class="flex-grow-1" style="min-width:220px; max-width:420px;">
+        <div class="small mb-1" style="color:#cfe0ff;">Progress <span id="progLabel"></span></div>
+        <div class="progress"><div class="progress-bar" id="barFill" style="width:0%"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Board (kept dark for drama) -->
+  <div class="card glass border-0 mb-3">
+    <div class="card-body">
+      <div class="board" id="board"></div>
+    </div>
+  </div>
+
+  <!-- Finish Card -->
+  <div class="card glass border-0 text-center mt-3" id="finishCard" style="display:none">
+    <div class="card-body p-5">
+      <h2 class="display-6 fw-800 mb-2" id="finishTitle"
+          style="background:linear-gradient(90deg,#9ae6b4,#d1fae5);-webkit-background-clip:text;background-clip:text;color:transparent;">
+        Board complete!
+      </h2>
+      <p id="finishStats" class="mb-4 text-secondary" style="color:#d0dbff !important;"></p>
+      <div class="d-flex justify-content-center gap-2">
+        <a class="btn btn-ghost px-4" href="{{ url_for('home') }}">Back to Home</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Line toast -->
+<div class="toastline" id="toastLine"><i class="bi bi-trophy me-1"></i> Line completed! +20 XP</div>
+
+<!-- Question Modal -->
+<div class="modal fade" id="qModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header align-items-center">
+        <h5 class="modal-title"><span id="modalCellTitle">Cell</span></h5>
+        <span class="ms-3 badge-type badge-mcq" id="modalTypeBadge">Multiple Choice</span>
+        <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-secondary mb-3" id="modalPrompt"></p>
+        <div id="modalMCQ" class="vstack gap-2 mb-3" style="display:none"></div>
+        <div id="modalShort" style="display:none">
+          <input class="quiz-input w-100" id="modalShortInput" placeholder="Type your answer here..." />
+        </div>
+        <div id="modalLong" style="display:none">
+          <textarea class="quiz-input w-100" rows="3" id="modalLongInput" placeholder="Write one clear sentence..."></textarea>
+          <div class="form-text">Use every required word (case-insensitive).</div>
+        </div>
+        <div id="modalFeedback" class="mt-3"></div>
+        <div id="modalLockHint" class="mt-2" style="display:none">
+          <i class="bi bi-lock-fill me-1"></i> This cell is locked (already checked).
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="modalClearBtn" type="button"><i class="bi bi-eraser"></i> Clear</button>
+        <button class="btn btn-gradient" id="modalCheckBtn" type="button">Check</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+/* ========= Data ========= */
+const RAW = {{ qs|tojson }};
+const BOARD_SIZE = 4, TOTAL = 16;
+
+/* Map by fixed board position (0..15) */
+const POSMAP = {};
+for (const q of RAW){
+  const p = (q.extra_parsed && typeof q.extra_parsed.pos === 'number') ? q.extra_parsed.pos : null;
+  if (p!==null && p>=0 && p<16) POSMAP[p] = q;
+}
+const QUESTIONS = Array.from({length:16}, (_,i)=> POSMAP[i]);
+
+/* ========= State ========= */
+let lives = 3, xp = 0, lines = 0;
+let selectedPos = null;
+let answered = new Set();
+let correct = new Set();
+let awardedLines = new Set();
+
+/* ========= Elements ========= */
+const board = document.getElementById('board');
+const lifeChip = document.getElementById('lifeChip');
+const xpChip = document.getElementById('xpChip');
+const lineChip = document.getElementById('lineChip');
+const barFill = document.getElementById('barFill');
+const progLabel = document.getElementById('progLabel');
+
+const finishCard = document.getElementById('finishCard');
+const finishTitle = document.getElementById('finishTitle');
+const finishStats = document.getElementById('finishStats');
+
+/* Modal refs */
+const qModalEl = document.getElementById('qModal');
+const qModal = new bootstrap.Modal(qModalEl);
+const modalCellTitle = document.getElementById('modalCellTitle');
+const modalTypeBadge = document.getElementById('modalTypeBadge');
+const modalPrompt = document.getElementById('modalPrompt');
+const modalMCQ = document.getElementById('modalMCQ');
+const modalShort = document.getElementById('modalShort');
+const modalLong = document.getElementById('modalLong');
+const modalShortInput = document.getElementById('modalShortInput');
+const modalLongInput = document.getElementById('modalLongInput');
+const modalFeedback = document.getElementById('modalFeedback');
+const modalLockHint = document.getElementById('modalLockHint');
+const modalClearBtn = document.getElementById('modalClearBtn');
+const modalCheckBtn = document.getElementById('modalCheckBtn');
+
+/* ========= Helpers ========= */
+function typeMeta(t){
+  if (t==='mcq')   return {label:'MCQ', title:'Multiple Choice', icon:'bi-check2-square', badge:'badge-mcq'};
+  if (t==='short') return {label:'SHORT', title:'Short Answer',   icon:'bi-input-cursor-text', badge:'badge-short'};
+  return {label:'LONG', title:'Long Answer', icon:'bi-pencil-square', badge:'badge-long'};
+}
+function requiredWords(q){
+  let req = (q.extra_parsed && Array.isArray(q.extra_parsed.required_words)) ? q.extra_parsed.required_words : [];
+  if (!req.length && q.correct){
+    try{ const parsed = JSON.parse(q.correct); if (Array.isArray(parsed)) req = parsed; }catch(e){}
+  }
+  return (req || []).map(String);
+}
+function containsWord(text, word){
+  const esc = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`\\b${esc}\\b`, 'i');
+  return re.test(text);
+}
+function formatPrompt(s){ return escapeHtml(s||'').replace(/\n/g,'<br>'); }
+function escapeHtml(s){ return String(s??'').replace(/[&<>"']/g,(m)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
+function normalize(s){ return String(s||'').trim().toLowerCase(); }
+
+/* ========= Render Board ========= */
+function renderBoard(){
+  board.innerHTML = '';
+  for (let i=0;i<TOTAL;i++){
+    const q = QUESTIONS[i];
+    const m = typeMeta(q?.qtype);
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    cell.dataset.pos = i;
+
+    cell.innerHTML = `
+      <div class="inner">
+        <div class="face front">
+          <div class="text-center">
+            <div class="type-emblem em-${q.qtype}">
+              <i class="bi ${m.icon}"></i> <span>${m.label}</span>
+            </div>
+            <div class="front-cta">${m.title} • tap to open</div>
+          </div>
+        </div>
+        <div class="face back">
+          <div><i class="bi bi-question-circle me-1"></i> Ready?</div>
+        </div>
+      </div>
+    `;
+
+    if (correct.has(i)) {
+      cell.classList.add('correct','locked');
+      cell.insertAdjacentHTML('beforeend','<span class="badge-done">✓</span>');
+    } else if (answered.has(i)) {
+      cell.classList.add('wrong','locked');
+      cell.insertAdjacentHTML('beforeend','<span class="badge-done">✗</span>');
+    }
+
+    cell.addEventListener('click', ()=>{
+      if (answered.has(i) || finishCard.style.display !== 'none') return;
+      selectedPos = i;
+      cell.classList.add('flipped');
+      setTimeout(()=> openModalFor(i), 300);
+    });
+
+    board.appendChild(cell);
+  }
+}
+
+/* ========= Modal ========= */
+function hideAllModalBlocks(){
+  modalMCQ.style.display='none';
+  modalShort.style.display='none';
+  modalLong.style.display='none';
+}
+
+function openModalFor(pos){
+  const q = QUESTIONS[pos]; if (!q) return;
+
+  const m = typeMeta(q.qtype);
+  modalCellTitle.textContent = `Cell ${pos+1}`;
+  modalTypeBadge.textContent = m.title;
+  modalTypeBadge.className = `ms-3 badge-type ${m.badge}`;
+
+  modalPrompt.innerHTML = formatPrompt(q.prompt||'');
+  modalFeedback.innerHTML = '';
+  modalLockHint.style.display = answered.has(pos) ? 'block' : 'none';
+  modalClearBtn.disabled = answered.has(pos);
+  modalCheckBtn.disabled = answered.has(pos);
+
+  hideAllModalBlocks();
+
+  if (q.qtype==='mcq'){
+    modalMCQ.style.display='block';
+    modalMCQ.innerHTML='';
+    [q.choice_a, q.choice_b, q.choice_c, q.choice_d].forEach((text,i)=>{
+      const b = document.createElement('button');
+      b.type='button'; b.className='option-btn w-100 text-start';
+      b.innerHTML = `<span class="text-secondary me-2">${['A','B','C','D'][i]}.</span> ${escapeHtml(text||'')}`;
+      b.addEventListener('click', ()=>{
+        if (answered.has(pos)) return;
+        [...modalMCQ.children].forEach(x=>x.classList.remove('sel'));
+        b.classList.add('sel');
+      });
+      if (answered.has(pos)) b.disabled = true;
+      modalMCQ.appendChild(b);
+    });
+  } else if (q.qtype==='short'){
+    modalShort.style.display='block';
+    modalShortInput.value = ''; modalShortInput.disabled = answered.has(pos);
+  } else {
+    modalLong.style.display='block';
+    modalLongInput.value = ''; modalLongInput.disabled = answered.has(pos);
+  }
+
+  qModal.show();
+}
+
+qModalEl.addEventListener('hidden.bs.modal', ()=>{
+  const cell = board.querySelector(`.cell[data-pos="${selectedPos}"]`);
+  if (cell && cell.classList.contains('flipped')) cell.classList.remove('flipped');
+  modalFeedback.innerHTML = '';
+});
+
+qModalEl.addEventListener('keydown', (e)=>{
+  const q = (selectedPos!==null) ? QUESTIONS[selectedPos] : null;
+  if (!q) return;
+  if (q.qtype==='mcq'){
+    const n = parseInt(e.key,10);
+    if (n>=1 && n<=4 && modalMCQ.children[n-1] && !answered.has(selectedPos)){
+      modalMCQ.children[n-1].click();
+    }
+  }
+  if (e.key==='Enter'){ e.preventDefault(); onModalCheck(); }
+});
+
+/* ========= Check ========= */
+document.getElementById('modalClearBtn').addEventListener('click', ()=>{
+  if (selectedPos===null) return;
+  const q = QUESTIONS[selectedPos];
+  if (q.qtype==='mcq') [...modalMCQ.children].forEach(c=> c.classList.remove('sel'));
+  if (q.qtype==='short') modalShortInput.value = '';
+  if (q.qtype==='long') modalLongInput.value = '';
+  modalFeedback.innerHTML = '';
+});
+document.getElementById('modalCheckBtn').addEventListener('click', onModalCheck);
+
+function onModalCheck(){
+  if (selectedPos===null) return;
+  const q = QUESTIONS[selectedPos];
+  if (!q || answered.has(selectedPos)) return;
+
+  let ok = false;
+
+  if (q.qtype === 'mcq'){
+    const i = [...modalMCQ.children].findIndex(b=> b.classList.contains('sel'));
+    if (i<0) return;
+    const letter = ['A','B','C','D'][i];
+    ok = (letter.toUpperCase() === (q.correct||'').toUpperCase());
+
+    [...modalMCQ.children].forEach((btn,idx)=>{
+      btn.disabled = true;
+      if (!ok && idx===i) btn.classList.add('wrong');
+      if (['A','B','C','D'][idx].toUpperCase() === (q.correct||'').toUpperCase()) btn.classList.add('correct');
+      if (idx!==i && ['A','B','C','D'][idx].toUpperCase() !== (q.correct||'').toUpperCase()) btn.classList.add('opacity-50');
+    });
+
+  } else if (q.qtype === 'short'){
+    const val = (modalShortInput.value || '').trim(); if (!val) return;
+    ok = normalize(val) === normalize(q.correct||'');
+
+  } else { // long
+    const txt = (modalLongInput.value || '').trim(); if (!txt) return;
+    const req = requiredWords(q);
+    const missing = req.filter(w => !containsWord(txt, w));
+    const tokenCount = txt.split(/\s+/).filter(Boolean).length;
+    const minLen = Math.max(6, req.length + 2);
+    ok = (missing.length === 0) && (tokenCount >= minLen);
+
+    if (!ok){
+      const missHtml = missing.length ? `<div class="small mt-1">Missing: <code>${missing.join('</code>, <code>')}</code></div>` : '';
+      const lenHtml = tokenCount < minLen ? `<div class="small mt-1">Write at least ${minLen} words (you wrote ${tokenCount}).</div>` : '';
+      modalFeedback.innerHTML = `<div class="alert alert-danger mb-0">Not quite. ${missHtml}${lenHtml}</div>`;
+    }
+  }
+
+  answered.add(selectedPos);
+
+  if (ok){
+    correct.add(selectedPos);
+    xp += 10;
+    modalFeedback.innerHTML = `<div class="alert alert-success mb-0">Correct! +10 XP</div>`;
+    awardLinesIfAny();
+  } else {
+    lives--;
+    modalFeedback.insertAdjacentHTML('afterbegin', `<div class="alert alert-danger mb-2">Wrong. -1 life</div>`);
+    if (lives <= 0){
+      qModal.hide(); endBoard("Out of lives!");
+    }
+  }
+
+  document.getElementById('modalClearBtn').disabled = true;
+  document.getElementById('modalCheckBtn').disabled = true;
+
+  updateHUD();
+  renderBoard();
+
+  if (answered.size === TOTAL || correct.size === TOTAL){
+    qModal.hide();
+    endBoard("Board completed!");
+  }
+}
+
+/* ========= Lines / Confetti ========= */
+function awardLinesIfAny(){
+  const newLines = computeCompletedLines(correct);
+  let awarded = 0;
+  newLines.forEach(idx=>{
+    if (!awardedLines.has(idx)){
+      awardedLines.add(idx);
+      awarded++;
+    }
+  });
+  if (awarded>0){
+    lines += awarded;
+    xp += 20 * awarded;
+    showToast();
+    shootConfetti(28 + 12*awarded);
+  }
+}
+
+function computeCompletedLines(setCorrect){
+  const results = new Set();
+  const lineDefs = [];
+  for (let r=0;r<4;r++) lineDefs.push([4*r+0,4*r+1,4*r+2,4*r+3]); // rows
+  for (let c=0;c<4;c++) lineDefs.push([0*4+c,1*4+c,2*4+c,3*4+c]); // cols
+  lineDefs.push([0,5,10,15]);                                     // diag
+  lineDefs.push([3,6,9,12]);                                      // diag
+  lineDefs.forEach((L, idx)=>{ if (L.every(p=> setCorrect.has(p))) results.add(idx); });
+  return results;
+}
+
+/* ========= HUD & Finish ========= */
+function updateHUD(){
+  const pct = Math.round((answered.size / TOTAL) * 100);
+  barFill.style.width = pct + '%';
+  progLabel.textContent = `(${answered.size}/${TOTAL} opened)`;
+  lifeChip.innerHTML = `<i class="bi bi-heart-fill"></i> Lives ${Math.max(lives,0)}`;
+  xpChip.innerHTML = `<i class="bi bi-stars"></i> XP ${xp}`;
+  lineChip.innerHTML = `<i class="bi bi-grid-3x3"></i> Lines ${lines}`;
+
+  if (answered.size === TOTAL && finishCard.style.display === 'none'){
+    endBoard("All cells opened!");
+  }
+}
+
+function endBoard(reason){
+  finishCard.style.display='block';
+  finishTitle.textContent = reason || "Board complete!";
+  finishStats.textContent = `Solved: ${correct.size}/${TOTAL} • Lines: ${lines} • XP: ${xp}`;
+}
+
+/* ========= Toast + Confetti ========= */
+function showToast(){
+  const el = document.getElementById('toastLine');
+  el.style.display='block';
+  setTimeout(()=> el.style.display='none', 1500);
+}
+
+function shootConfetti(n=30){
+  const colors = ['#60a5fa','#a78bfa','#f59e0b','#22c55e','#e879f9','#38bdf8'];
+  for (let i=0;i<n;i++){
+    const p = document.createElement('div');
+    p.className = 'confetti';
+    const size = 6 + Math.random()*10;
+    p.style.width = size+'px';
+    p.style.height = (size*1.4)+'px';
+    p.style.left = (Math.random()*100)+'vw';
+    p.style.background = colors[Math.floor(Math.random()*colors.length)];
+    p.style.transform = `rotate(${Math.random()*360}deg)`;
+    p.style.opacity = 0.9;
+    document.body.appendChild(p);
+
+    const fall = 800 + Math.random()*900;
+    const xdrift = (Math.random()*2-1)*120;
+    p.animate([
+      { transform:`translate(0,0) rotate(0deg)`, opacity:1 },
+      { transform:`translate(${xdrift}px, ${window.innerHeight+80}px) rotate(720deg)`, opacity:0.9 }
+    ], { duration: fall, easing:'cubic-bezier(.2,.7,.2,1)' });
+
+    setTimeout(()=> p.remove(), fall);
+  }
+}
+
+/* ========= Start ========= */
+renderBoard();
+updateHUD();
+</script>
+</body>
+</html>
