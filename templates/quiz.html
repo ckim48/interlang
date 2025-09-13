@@ -10,20 +10,22 @@
   <link rel="icon" href="{{ url_for('static', filename='img/favicon.png') }}" sizes="32x32">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" sizes="180x180">
 
-
 <style>
 :root{
-  /* Light shell tokens (match nav.html / Home) */
-  --ink:#0e1b35; --muted:#4b5567; --bg:#ffffff; --bg-soft:#f7f9ff; --ring:#cfe2ff;
-  --brand:#3b82f6; --accent:#8f9bff; --ok:#22c55e; --red:#ef4444;
+  /* SAME TOKENS AS PROFILE */
+  --ink:#0e1b35; --muted:#4b5567; --bg:#ffffff; --bg-soft:#f7f9ff; --grid:#0e1b3514;
+  --brand:#3b82f6; --accent:#8f9bff; --ring:#cfe2ff;
+  --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444;
 
-  /* Dark board tokens (kept for the game area) */
+  /* Dark board tokens (only for the game area) */
   --navy-900:#0b1220; --navy-800:#0e1730;
   --glass: rgba(19,27,46,.72);
-  --t-mcq:#60a5fa; --t-short:#a78bfa; --t-long:#f59e0b;
+
+  /* “point color” confetti dots etc. */
+  --point1:#60a5fa; --point2:#a78bfa; --point3:#f59e0b; --point4:#22c55e; --point5:#38bdf8; --point6:#e879f9;
 }
 
-/* Light page background to match navbar */
+/* Page bg matches Profile */
 html,body{height:100%}
 body{
   font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
@@ -35,46 +37,59 @@ body{
   background-attachment: fixed;
 }
 
-/* Light chips (HUD) */
+/* ======= LIGHT COMPONENTS (copied from Profile theme) ======= */
 .pill{
   background:linear-gradient(180deg,#fff,#f3f7ff);
   color:#223357; border:1px solid #e6ecff; font-weight:800;
   border-radius:999px; padding:.38rem .8rem; display:inline-flex; align-items:center; gap:.5rem;
   box-shadow:0 6px 16px rgba(13,31,64,.06);
 }
-
-/* Game glass cards keep dark vibe for focus */
-.glass{
-  background: var(--glass);
-  backdrop-filter: blur(12px);
-  border:1px solid rgba(255,255,255,.10) !important;
-  border-radius:22px;
-  box-shadow: 0 14px 50px rgba(4,10,28,.30);
-  color:#e9eefb; /* ensure readable inside dark glass */
+.card-glass{
+  border:1px solid #e6ecff;
+  background:linear-gradient(180deg,#fff,#f7faff);
+  border-radius:18px; box-shadow:0 10px 28px rgba(13,31,64,.06);
 }
-
-/* Progress */
-.progress{ height:12px; background:#eef3ff; border:1px solid #e2ebff; border-radius:999px; }
+.progress{ height:12px; background:#eef3ff; border:1px solid #e2ebff; border-radius:999px; overflow:hidden }
 .progress-bar{
   background-image: linear-gradient(90deg, var(--brand), var(--accent));
   background-size: 200% 100%; animation: move 3s linear infinite;
 }
 @keyframes move{0%{background-position:0 0}100%{background-position:200% 0}}
 
-/* Board grid */
+.btn-ghost{border:1px solid #e2ebff; color:#0e1b35; background:#fff}
+.btn-ghost:hover{border-color:#cfe2ff; background:#f7fbff}
+.btn-gradient{ border:none; color:#07110a; font-weight:800; background-image:linear-gradient(90deg,#16a34a,#22c55e); }
+.btn-gradient:hover{filter:brightness(1.05)}
+
+.alert-success{background:#eafff3;border:1px solid #baf3d0;color:#0b3b22}
+.alert-danger{background:#fff1f1;border:1px solid #ffd2d2;color:#7f1d1d}
+.toastline{
+  position:fixed; right:1rem; bottom:1rem; background:#eafff3; border:1px solid #baf3d0;
+  padding:.65rem .9rem; border-radius:12px; box-shadow:0 8px 24px rgba(13,31,64,.10); z-index:9999; display:none; color:#0b3b22;
+}
+
+/* ======= DARK BOARD AREA (kept for drama) ======= */
+.board-wrap{
+  background: linear-gradient(180deg, rgba(20,26,44,.96), rgba(12,19,38,.98));
+  border:1px solid rgba(255,255,255,.08); color:#e6eeff; border-radius:18px;
+  box-shadow: 0 14px 50px rgba(4,10,28,.30);
+}
 .board{ display:grid; grid-template-columns:repeat(4, 1fr); gap:.9rem; }
 
-/* Cell (unchanged dark style for drama/contrast) */
+/* Cells (unchanged core, add subtle “point color” flare on hover) */
 .cell{
   position:relative; min-height:140px; border-radius:18px; cursor:pointer; overflow:hidden;
   background:
     radial-gradient(600px 220px at 50% -40%, rgba(110,168,254,.18), transparent 60%),
     linear-gradient(180deg, rgba(22,32,65,.95), rgba(15,23,46,.96));
   border:1px solid rgba(255,255,255,.10);
-  transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+  transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease, outline .12s ease;
   perspective: 900px; isolation: isolate;
 }
-.cell:hover{ transform:translateY(-2px); box-shadow:0 16px 40px rgba(0,0,0,.35) }
+.cell:hover{
+  transform:translateY(-2px); box-shadow:0 16px 40px rgba(0,0,0,.35);
+  outline: 2px solid rgba(99,102,241,.22); /* subtle point color ring */
+}
 .cell.correct{ border-color:#38d878; }
 .cell.wrong{ border-color:#f08c8c; }
 .cell.locked{ pointer-events:none; opacity:.92; }
@@ -84,7 +99,7 @@ body{
   background: conic-gradient(from 180deg, rgba(143,155,255,.45), rgba(110,168,254,.45), rgba(143,155,255,.45));
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor; mask-composite: exclude;
-  opacity:.3; animation: spin 9s linear infinite;
+  opacity:.30; animation: spin 9s linear infinite;
 }
 @keyframes spin{ to{ transform: rotate(1turn); } }
 
@@ -92,21 +107,20 @@ body{
 .cell.flipped .inner{ transform: rotateY(180deg); }
 .face{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:1rem; backface-visibility:hidden; }
 
-/* FRONT */
+/* Front badges now use the light brand palette */
 .face.front{ text-align:center; color:#dbe6ff; }
 .type-emblem{
   display:inline-flex; align-items:center; gap:.75rem; padding:.65rem .9rem;
   border-radius:14px; font-weight:800; letter-spacing:.4px; font-size:1.05rem;
-  color:#0d1430; background: #e7eeff;
+  color:#0d1430; background: linear-gradient(135deg, #dbeafe, #e0ecff);
   box-shadow: inset 0 0 0 1px rgba(16,33,67,.12), 0 8px 22px rgba(0,0,0,.28);
 }
-.type-emblem i{ font-size:1.25rem; }
 .em-mcq{ background:linear-gradient(135deg, #dbeafe, #e0ecff); color:#0b2a4c; }
 .em-short{ background:linear-gradient(135deg, #ede9fe, #efeaff); color:#2a0b4c; }
 .em-long{ background:linear-gradient(135deg, #fef3c7, #fff2d7); color:#3f2504; }
 .front-cta{ margin-top:.55rem; color:#cbd5e1; font-weight:600; opacity:.95; letter-spacing:.2px; font-size:.9rem; }
 
-/* BACK */
+/* Back */
 .face.back{ transform: rotateY(180deg); color:#dfe8ff; font-weight:700; font-size:1.1rem; }
 
 /* result chip */
@@ -116,50 +130,43 @@ body{
   border-radius:999px; padding:.25rem .55rem; font-size:.82rem; z-index:2; color:#fff;
 }
 
-/* Modal (kept dark for immersion) */
+/* Modal switched to LIGHT to match profile (with point-color accents) */
 .modal-content{
-  background:linear-gradient(180deg, rgba(20,26,44,.96), rgba(12,19,38,.98));
-  border:1px solid rgba(255,255,255,.08); color:#e6eeff; border-radius:18px;
+  background:linear-gradient(180deg,#fff,#f7faff);
+  border:1px solid #e6ecff; color:var(--ink); border-radius:18px;
+  box-shadow:0 20px 60px rgba(13,31,64,.18);
 }
-.modal-header{ border-bottom:1px solid rgba(255,255,255,.08); }
-.modal-footer{ border-top:1px solid rgba(255,255,255,.08); }
-.modal .form-text{ color:#b9c6e4 !important; }
-.badge-type{ border-radius:999px; padding:.35rem .7rem; font-weight:800; letter-spacing:.3px; }
-.badge-mcq{ background:rgba(96,165,250,.18); color:#cfe6ff; border:1px solid rgba(96,165,250,.35);}
-.badge-short{ background:rgba(167,139,250,.18); color:#efe6ff; border:1px solid rgba(167,139,250,.35);}
-.badge-long{ background:rgba(245,158,11,.18); color:#fff3d6; border:1px solid rgba(245,158,11,.35);}
+.modal-header{ border-bottom:1px solid #e6ecff; }
+.modal-footer{ border-top:1px solid #e6ecff; }
+.modal .form-text{ color:#4b5567 !important; }
+.badge-type{ border-radius:999px; padding:.35rem .7rem; font-weight:800; letter-spacing:.3px; border:1px solid #e2ebff; }
+.badge-mcq{ background:linear-gradient(180deg,#fff,#f3f7ff); color:#223357;}
+.badge-short{ background:linear-gradient(180deg,#fff8e6,#fff3cc); color:#5e4300;}
+.badge-long{ background:linear-gradient(180deg,#eef4ff,#e6eeff); color:#1f2b46;}
 
 .option-btn{
-  border:1px solid #293241 !important;
-  background:linear-gradient(180deg, rgba(23,32,57,.92), rgba(17,26,46,.92)) !important;
-  color:#e5e7eb !important; padding:14px 16px !important; border-radius:14px !important;
+  border:1px solid #e2ebff !important;
+  background:linear-gradient(180deg,#fff,#f7faff) !important;
+  color:#0e1b35 !important; padding:14px 16px !important; border-radius:14px !important;
   transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease, background .12s ease;
 }
-.option-btn:hover{ transform:translateY(-2px); box-shadow:0 8px 24px rgba(0,0,0,.25) }
-.option-btn.sel{ border-color:#7cc2ff!important; box-shadow:0 0 0 .25rem var(--ring) }
+.option-btn:hover{ transform:translateY(-2px); box-shadow:0 8px 24px rgba(13,31,64,.10) }
+.option-btn.sel{ border-color:#cfe2ff!important; box-shadow:0 0 0 .25rem var(--ring) }
 .option-btn.correct{ border-color:#38d878!important; background:linear-gradient(145deg, rgba(34,197,94,.10), transparent)!important; }
 .option-btn.wrong{ border-color:#f08c8c!important; background:linear-gradient(145deg, rgba(248,113,113,.10), transparent)!important; }
 
-.quiz-input{ background:#0b1220; color:#e5e7eb; border:1px solid #293241; padding:14px 16px; border-radius:14px; }
-.quiz-input:focus{ border-color:#7cc2ff; box-shadow:0 0 0 .25rem var(--ring) }
-
-/* Buttons (no .btn-primary; use existing) */
-.btn-ghost{border:1px solid #334155; color:#e5e7eb; background:transparent}
-.btn-ghost:hover{border-color:#64748b; background:rgba(255,255,255,.06)}
-.btn-gradient{ border:none; color:#07110a; font-weight:800; background-image:linear-gradient(90deg,#16a34a,#22c55e); }
-.btn-gradient:hover{filter:brightness(1.05)}
-
-/* Alerts + toast */
-.alert-success{background:rgba(34,197,94,.12); border-color:#14532d; color:#c7f9d4}
-.alert-danger{background:rgba(239,68,68,.12); border-color:#7f1d1d; color:#fecaca}
-.toastline{
-  position:fixed; right:1rem; bottom:1rem; background:rgba(34,197,94,.15); border:1px solid #14532d;
-  padding:.65rem .9rem; border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,.35); z-index:9999; display:none; color:#0b3b22; backdrop-filter: blur(2px);
+.quiz-input{
+  background:#fff; color:#0e1b35; border:1px solid #e2ebff; padding:14px 16px; border-radius:14px;
 }
+.quiz-input:focus{ border-color:#cfe2ff; box-shadow:0 0 0 .25rem var(--ring) }
 
-/* Soft helper text */
+/* HUD helper text */
 .dim{ color:var(--muted) }
+
+/* Confetti uses point colors */
+.confetti{ position:fixed; top:-10px; left:0; width:8px; height:12px; border-radius:2px; z-index:9999 }
 </style>
+
 </head>
 <body>
 
@@ -167,8 +174,7 @@ body{
 {% include 'nav.html' %}
 
 <div class="container pb-5 mt-4">
-  <!-- HUD (dark glass on light page for contrast) -->
-  <div class="glass p-3 mb-3">
+  <div class="card-glass p-3 mb-3">
     <div class="d-flex align-items-center gap-3 flex-wrap">
       <div class="me-auto d-flex align-items-center gap-2">
         <span class="pill" id="lifeChip"><i class="bi bi-heart-fill"></i> Lives 3</span>
@@ -176,21 +182,19 @@ body{
         <span class="pill" id="lineChip"><i class="bi bi-grid-3x3"></i> Lines 0</span>
       </div>
       <div class="flex-grow-1" style="min-width:220px; max-width:420px;">
-        <div class="small mb-1" style="color:#cfe0ff;">Progress <span id="progLabel"></span></div>
+        <div class="small mb-1" style="color:#223357;">Progress <span id="progLabel"></span></div>
         <div class="progress"><div class="progress-bar" id="barFill" style="width:0%"></div></div>
       </div>
     </div>
   </div>
 
   <!-- Board (kept dark for drama) -->
-  <div class="card glass border-0 mb-3">
-    <div class="card-body">
-      <div class="board" id="board"></div>
-    </div>
+  <div class="board-wrap border-0 mb-3 p-3">
+    <div class="board" id="board"></div>
   </div>
 
   <!-- Finish Card -->
-  <div class="card glass border-0 text-center mt-3" id="finishCard" style="display:none">
+  <div class="card-glass border-0 text-center mt-3" id="finishCard" style="display:none">
     <div class="card-body p-5">
       <h2 class="display-6 fw-800 mb-2" id="finishTitle"
           style="background:linear-gradient(90deg,#9ae6b4,#d1fae5);-webkit-background-clip:text;background-clip:text;color:transparent;">

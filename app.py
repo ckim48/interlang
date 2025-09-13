@@ -161,7 +161,7 @@ def stories():
     username = session["username"]
     db = get_db()
 
-    # user header info...
+    # user header
     u = db.execute("SELECT level, xp, title_code FROM users WHERE username=?", (username,)).fetchone()
     user_level = u["level"] if u else 1
     user_xp    = u["xp"] if u else 0
@@ -169,29 +169,53 @@ def stories():
     display_title = title_info["title"]
     title_icon    = title_info["icon"]
 
-    # query params
+    # filters
     q        = (request.args.get("q") or "").strip()
     category = (request.args.get("category") or "").strip()
     theme    = (request.args.get("theme") or "").strip()
-    try:
-        age = int(request.args.get("age")) if request.args.get("age") else None
-    except Exception:
-        age = None
-    try:
-        difficulty = int(request.args.get("difficulty")) if request.args.get("difficulty") else None
-    except Exception:
-        difficulty = None
+    try:    age = int(request.args.get("age")) if request.args.get("age") else None
+    except: age = None
+    try:    difficulty = int(request.args.get("difficulty")) if request.args.get("difficulty") else None
+    except: difficulty = None
 
-    items = recommend_stories(
+    # pagination inputs
+    try:    page = max(1, int(request.args.get("page", 1)))
+    except: page = 1
+    PAGE_SIZE = 12
+    MAX_PAGES = 5
+
+    # fetch all matches (no limit), then prioritize generated-first
+    items_all = recommend_stories(
         age=age, difficulty=difficulty, q=q or None,
-        category=category or None, theme=theme or None, limit=12
+        category=category or None, theme=theme or None, limit=None
     )
 
-    for s in items:
-        try:
-            ensure_story_record(s["slug"], s)  # inserts if missing (idempotent)
-        except Exception:
-            pass
+    # Ensure meta exists (idempotent, content may still be empty)
+    for s in items_all:
+        try: ensure_story_record(s["slug"], s)
+        except Exception: pass
+
+    # Find which slugs are already generated (content non-empty)
+    slugs = tuple(s["slug"] for s in items_all)
+    generated = set()
+    if slugs:
+        qmarks = ",".join(["?"] * len(slugs))
+        rows = db.execute(
+            f"SELECT slug FROM stories WHERE slug IN ({qmarks}) AND COALESCE(NULLIF(content,''), '') <> ''",
+            slugs
+        ).fetchall()
+        generated = {r["slug"] for r in rows}
+
+    # Stable sort: generated first, then the earlier ranking already in items_all order
+    items_all.sort(key=lambda s: (0 if s["slug"] in generated else 1))
+
+    # paginate with a hard cap of 5 pages
+    total_items = len(items_all)
+    total_pages = min(MAX_PAGES, max(1, (total_items + PAGE_SIZE - 1) // PAGE_SIZE))
+    page = min(page, total_pages)
+    start = (page - 1) * PAGE_SIZE
+    end   = start + PAGE_SIZE
+    items = items_all[start:end]
 
     return render_template(
         "stories.html",
@@ -201,9 +225,9 @@ def stories():
         display_title=display_title,
         title_icon=title_icon,
         items=items,
-        q=q, category=category, theme=theme, age=age, difficulty=difficulty
+        q=q, category=category, theme=theme, age=age, difficulty=difficulty,
+        page=page, total_pages=total_pages, page_size=PAGE_SIZE, total_items=total_items
     )
-
 
 def seed_achievements(db):
     # tables
@@ -882,17 +906,35 @@ def home():
         title_icon=title_icon,
         achievements_earned=earned_count,
     )
-def recommend_stories(age: int|None, difficulty: int|None, q: str|None, category: str|None, theme: str|None, limit=12):
+def recommend_stories(
+    age: int | None,
+    difficulty: int | None,
+    q: str | None,
+    category: str | None,
+    theme: str | None,
+    limit: int | None = 12
+):
     """
     Pure local search over MOCK_CATALOG. No network.
-    Filters by q (title/author/category/theme), age (range overlap), difficulty (exact),
-    and optional category/theme. Returns up to `limit` items.
+
+    Filters by:
+      - q (in title/author/category/theme, case-insensitive substring)
+      - age (must fall within the item's [age_min, age_max])
+      - difficulty (exact match if provided)
+      - category/theme (exact token match, case-insensitive)
+
+    Ranking:
+      - If q is provided: exact title match first, then title prefix, then others.
+
+    Returns:
+      - Up to `limit` items if limit is an int.
+      - All matching items if limit is None.
     """
     qlow = (q or "").strip().lower()
     catlow = (category or "").strip().lower()
     themelow = (theme or "").strip().lower()
 
-    def matches(item):
+    def matches(item: dict) -> bool:
         # difficulty
         if difficulty and int(item["difficulty"]) != int(difficulty):
             return False
@@ -907,8 +949,8 @@ def recommend_stories(age: int|None, difficulty: int|None, q: str|None, category
         # query across fields
         if qlow:
             hay = [
-                item["title"].lower(),
-                item["author"].lower(),
+                (item.get("title") or "").lower(),
+                (item.get("author") or "").lower(),
                 " ".join(item.get("categories") or []).lower(),
                 " ".join(item.get("themes") or []).lower(),
             ]
@@ -918,19 +960,23 @@ def recommend_stories(age: int|None, difficulty: int|None, q: str|None, category
 
     results = [s for s in MOCK_CATALOG if matches(s)]
 
-    # simple ranking: exact title hit first, then prefix, then substring
-    def score(item):
-        title = item["title"].lower()
-        if qlow and title == qlow: return 0
-        if qlow and title.startswith(qlow): return 1
+    # simple ranking: exact title hit first, then prefix, then substring/others
+    def score(item: dict) -> int:
+        title = (item.get("title") or "").lower()
+        if qlow and title == qlow:
+            return 0
+        if qlow and title.startswith(qlow):
+            return 1
         return 2
 
     results.sort(key=score)
-    results = results[:limit]
+
+    # Only slice if a numeric limit is provided
+    ranked = results if limit is None else results[:max(0, int(limit))]
 
     # ensure minimal fields & types (mirrors old structure)
     items = []
-    for r in results:
+    for r in ranked:
         items.append({
             "slug": r["slug"],
             "title": r["title"],
@@ -944,10 +990,15 @@ def recommend_stories(age: int|None, difficulty: int|None, q: str|None, category
             "categories": r.get("categories", []),
             "themes": r.get("themes", []),
         })
-    # fallback if nothing matched: just take some from catalog near requested difficulty
+
+    # fallback if nothing matched: pull near requested difficulty (or whole catalog)
     if not items:
         pool = [s for s in MOCK_CATALOG if (not difficulty or s["difficulty"] == difficulty)]
-        items = pool[:limit] if pool else MOCK_CATALOG[:limit]
+        if limit is None:
+            items = pool if pool else list(MOCK_CATALOG)
+        else:
+            items = (pool[:limit] if pool else list(MOCK_CATALOG)[:limit])
+
     return items
 
 

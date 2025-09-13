@@ -195,6 +195,49 @@
     .loader-bar { height: 10px; background: #eef3ff; border:1px solid var(--card-border); border-radius: 999px; overflow: hidden; margin-top: 10px; }
     .loader-bar > div { height: 100%; width: 0%; background: linear-gradient(90deg, var(--brand), var(--accent)); transition: width .12s linear; }
     .loader-pct { font-weight: 900; margin-top: 8px; color:#1c2a4a; }
+
+    /* Custom pagination styling */
+.custom-pagination .page-item {
+  margin: 0 4px;
+}
+
+.custom-pagination .page-link {
+  border: 1px solid var(--card-border);
+  background: #fff;
+  color: var(--ink);
+  font-weight: 700;
+  border-radius: 10px;
+  padding: 8px 14px;
+  box-shadow: 0 4px 10px rgba(13,31,64,.05);
+  transition: all 0.15s ease;
+}
+
+.custom-pagination .page-link:hover {
+  background: linear-gradient(180deg, var(--brand), var(--accent));
+  color: rgba(59,130,246,1);
+  border-color: var(--brand);
+}
+
+.custom-pagination .page-item.active .page-link {
+  background: linear-gradient(180deg, var(--brand), var(--accent));
+  color: rgba(59,130,246,1);
+  border-color: var(--brand);
+  box-shadow: 0 6px 16px rgba(59,130,246,.3);
+}
+
+.custom-pagination .page-item.disabled .page-link {
+  color: var(--muted);
+  background: #f7f9ff;
+  border-color: var(--card-border);
+  pointer-events: none;
+  box-shadow: none;
+}
+
+.custom-pagination .page-link i {
+  font-size: 1rem;
+  line-height: 1;
+}
+
   </style>
 </head>
 <body>
@@ -282,6 +325,36 @@
         </div>
       {% endif %}
     </div>
+{% if total_pages > 1 %}
+<nav aria-label="Stories pages" class="mt-4">
+  <ul class="pagination justify-content-center custom-pagination">
+    <li class="page-item {% if page == 1 %}disabled{% endif %}">
+      <a class="page-link"
+         href="{{ url_for('stories', q=q, category=category, theme=theme, age=age, difficulty=difficulty, page=page-1) }}"
+         aria-label="Previous">
+         <i class="bi bi-chevron-left"></i>
+      </a>
+    </li>
+
+    {% for p in range(1, total_pages+1) %}
+      <li class="page-item {% if p == page %}active{% endif %}">
+        <a class="page-link"
+           href="{{ url_for('stories', q=q, category=category, theme=theme, age=age, difficulty=difficulty, page=p) }}">{{ p }}</a>
+      </li>
+    {% endfor %}
+
+    <li class="page-item {% if page == total_pages %}disabled{% endif %}">
+      <a class="page-link"
+         href="{{ url_for('stories', q=q, category=category, theme=theme, age=age, difficulty=difficulty, page=page+1) }}"
+         aria-label="Next">
+         <i class="bi bi-chevron-right"></i>
+      </a>
+    </li>
+  </ul>
+</nav>
+{% endif %}
+
+
   </div>
 
   <!-- Loader -->
