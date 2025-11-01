@@ -8,12 +8,13 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
   <link rel="icon" href="{{ url_for('static', filename='img/favicon.png') }}" sizes="32x32">
-<link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" sizes="180x180">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" sizes="180x180">
 
   <style>
     :root{
       --navy-900:#0b1220; --navy-800:#111a2e; --navy-700:#1a2642; --navy-600:#243355;
       --brand:#6ea8fe; --accent:#8f9bff; --muted:#9fb2d9; --green:#22c55e;
+      --nav-h:90px; /* will be updated via JS */
     }
     body{
       font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
@@ -49,8 +50,12 @@
 
     /* Dictionary panel (right sheet) */
     .dict-sheet{
-      position: fixed; top:0; right:-420px; width: 420px; max-width: 96%;
-      height:100vh; background: #0f1836; color:#e9eefb;
+      position: fixed;
+      top: 90px;
+      right: -420px;
+      width: 420px; max-width: 96%;
+      height: calc(100vh - var(--nav-h));
+      background: #0f1836; color:#e9eefb;
       border-left: 1px solid rgba(255,255,255,.08);
       box-shadow: -20px 0 60px rgba(0,0,0,.45);
       transition: right .25s ease;
@@ -58,9 +63,11 @@
     }
     .dict-sheet.open{ right:0; }
     .dict-header{
+      position: sticky; top:0;
       padding:14px 16px; border-bottom:1px solid rgba(255,255,255,.08);
       display:flex; align-items:center; justify-content:space-between;
-      background: linear-gradient(180deg, rgba(20,26,44,.7), rgba(20,26,44,.45));
+      background: linear-gradient(180deg, rgba(20,26,44,.85), rgba(20,26,44,.6));
+      z-index: 1;
     }
     .dict-body{ padding:16px; overflow:auto; }
     .dict-word{ font-size:1.35rem; font-weight:800; }
@@ -71,7 +78,6 @@
   </style>
 </head>
 <body>
-  <!-- Use global solid light navbar -->
   {% include 'nav.html' %}
 
   <div class="container pb-5 mt-4">
@@ -123,10 +129,10 @@
   <div class="dict-sheet" id="dict-sheet" aria-hidden="true">
     <div class="dict-header">
       <div class="fw-bold"><i class="bi bi-translate"></i> Dictionary</div>
-      <div>
+      <div class="d-flex align-items-center gap-2">
         <input id="dict-input" class="form-control form-control-sm d-inline-block" style="width: 160px;" placeholder="Look up a word…" />
         <button id="dict-search" class="btn btn-sm btn-primary"><i class="bi bi-search"></i></button>
-        <button id="dict-close" class="btn btn-sm btn-outline-light ms-2"><i class="bi bi-x-lg"></i></button>
+        <button id="dict-close" class="btn btn-sm btn-outline-light"><i class="bi bi-x-lg"></i></button>
       </div>
     </div>
     <div class="dict-body" id="dict-body">
@@ -135,6 +141,15 @@
   </div>
 
   <script>
+    // Respect fixed navbar height for the sheet
+    function setNavHeightVar(){
+      const nav = document.querySelector('.navbar.fixed-top, nav.navbar.fixed-top');
+      const h = nav ? Math.round(nav.getBoundingClientRect().height) : 56;
+      document.documentElement.style.setProperty('--nav-h', h + 'px');
+    }
+    window.addEventListener('load', setNavHeightVar);
+    window.addEventListener('resize', setNavHeightVar);
+
     // Data from server
     window.storyVocab = {{ (vocab or []) | tojson }};
 
@@ -143,9 +158,31 @@
       const text = el.textContent;
       if (!text || !words || !words.length) return;
       const escaped = words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\\\$&'));
-      const re = new RegExp("\\\\b(" + escaped.join("|") + ")\\\\b", "gi");
+      const re = new RegExp("\\b(" + escaped.join("|") + ")\\b", "gi");
       const html = text.replace(re, (m) => `<span class="word" data-word="${m.toLowerCase()}">${m}</span>`);
       el.innerHTML = html;
+    }
+
+    function setBookmarkVisual(btn, isOn){
+      if (!btn) return;
+      if (isOn){
+        btn.classList.remove('btn-outline-warning');
+        btn.classList.add('btn-warning');
+        btn.innerHTML = '<i class="bi bi-bookmark-fill"></i>';
+        btn.title = 'Unbookmark';
+        btn.setAttribute('aria-pressed', 'true');
+        btn.dataset.state = 'on';
+      }else{
+        btn.classList.remove('btn-warning');
+        btn.classList.add('btn-outline-warning');
+        btn.innerHTML = '<i class="bi bi-bookmark"></i>';
+        btn.title = 'Bookmark';
+        btn.setAttribute('aria-pressed', 'false');
+        btn.dataset.state = 'off';
+      }
+    }
+    function getBookmarkVisual(btn){
+      return (btn?.dataset.state === 'on');
     }
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -179,8 +216,9 @@
         }
       });
 
-      // Close sheet
+      // Close sheet (buttons + Esc)
       document.getElementById('dict-close')?.addEventListener('click', closeSheet);
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSheet(); });
     });
 
     function openSheet(){
@@ -209,13 +247,59 @@
         const j = await res.json();
         const ko = j.ko || '<span class="muted">No Korean translation found.</span>';
         const def = j.definition || '<span class="muted">No English definition found.</span>';
+
         body.innerHTML = `
-          <div class="dict-word mb-1">${escapeHTML(j.word || word)}</div>
-          <div class="dict-sub mb-3">Korean: ${ko}</div>
+          <div class="d-flex align-items-start justify-content-between">
+            <div>
+              <div class="dict-word mb-1">${escapeHTML(j.word || word)}</div>
+              <div class="dict-sub mb-3">Korean: ${ko}</div>
+            </div>
+            <button class="btn btn-outline-warning btn-sm" id="bookmark-btn"
+                    data-word="${escapeHTML(j.word || word)}" title="Bookmark" aria-pressed="false" data-state="off">
+              <i class="bi bi-bookmark"></i>
+            </button>
+          </div>
           <div class="mb-2"><span class="chip"><i class="bi bi-book"></i> Definition</span></div>
           <div class="mb-3">${escapeHTML(def)}</div>
           <div class="small muted"><i class="bi bi-journal-check"></i> This word is saved to your vocabulary notebook while you read.</div>
         `;
+
+        const btn = document.getElementById('bookmark-btn');
+        // Initialize from server if provided
+        if (typeof j.bookmarked === 'boolean') setBookmarkVisual(btn, j.bookmarked);
+
+        let clicking = false;
+        btn?.addEventListener('click', async (e) => {
+          if (clicking) return;
+          clicking = true;
+
+          const target = e.currentTarget;
+          const w = target.getAttribute('data-word');
+
+          // Optimistic toggle
+          const prev = getBookmarkVisual(target);
+          setBookmarkVisual(target, !prev);
+
+          try{
+            const r = await fetch('/api/vocab/bookmark', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ word: w, toggle: true })
+            });
+            const s = await r.json().catch(() => ({}));
+
+            // If server returns truth, trust it; else keep optimistic state
+            if (typeof s.bookmarked === 'boolean'){
+              setBookmarkVisual(target, s.bookmarked);
+            }
+          }catch(_){
+            // Revert on hard failure
+            setBookmarkVisual(target, prev);
+          }finally{
+            clicking = false;
+          }
+        });
+
       }catch(err){
         body.innerHTML = `<div class="text-danger"><i class="bi bi-exclamation-triangle"></i> Couldn't fetch the definition.</div>`;
       }
@@ -228,7 +312,6 @@
     }
   </script>
 
-  <!-- Ensure Bootstrap dropdowns (navbar) work -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

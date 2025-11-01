@@ -7,7 +7,7 @@
 
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-  <link rel="icon" href="{{ url_for('static', filename='img/favicon.png') }}" sizes="32x32">
+<link rel="icon" href="{{ url_for('static', filename='img/favicon.png') }}" sizes="32x32">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" sizes="180x180">
 
 <style>
@@ -76,7 +76,7 @@ body{
 }
 .board{ display:grid; grid-template-columns:repeat(4, 1fr); gap:.9rem; }
 
-/* Cells (unchanged core, add subtle “point color” flare on hover) */
+/* Cells */
 .cell{
   position:relative; min-height:140px; border-radius:18px; cursor:pointer; overflow:hidden;
   background:
@@ -88,7 +88,7 @@ body{
 }
 .cell:hover{
   transform:translateY(-2px); box-shadow:0 16px 40px rgba(0,0,0,.35);
-  outline: 2px solid rgba(99,102,241,.22); /* subtle point color ring */
+  outline: 2px solid rgba(99,102,241,.22);
 }
 .cell.correct{ border-color:#38d878; }
 .cell.wrong{ border-color:#f08c8c; }
@@ -107,7 +107,7 @@ body{
 .cell.flipped .inner{ transform: rotateY(180deg); }
 .face{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:1rem; backface-visibility:hidden; }
 
-/* Front badges now use the light brand palette */
+/* Front */
 .face.front{ text-align:center; color:#dbe6ff; }
 .type-emblem{
   display:inline-flex; align-items:center; gap:.75rem; padding:.65rem .9rem;
@@ -116,7 +116,7 @@ body{
   box-shadow: inset 0 0 0 1px rgba(16,33,67,.12), 0 8px 22px rgba(0,0,0,.28);
 }
 .em-mcq{ background:linear-gradient(135deg, #dbeafe, #e0ecff); color:#0b2a4c; }
-.em-short{ background:linear-gradient(135deg, #ede9fe, #efeaff); color:#2a0b4c; }
+.em-short{ background: linear-gradient(135deg, #f8d2ff, #ffbfe4); color:#2a0b4c; }
 .em-long{ background:linear-gradient(135deg, #fef3c7, #fff2d7); color:#3f2504; }
 .front-cta{ margin-top:.55rem; color:#cbd5e1; font-weight:600; opacity:.95; letter-spacing:.2px; font-size:.9rem; }
 
@@ -130,7 +130,7 @@ body{
   border-radius:999px; padding:.25rem .55rem; font-size:.82rem; z-index:2; color:#fff;
 }
 
-/* Modal switched to LIGHT to match profile (with point-color accents) */
+/* Modal (light) */
 .modal-content{
   background:linear-gradient(180deg,#fff,#f7faff);
   border:1px solid #e6ecff; color:var(--ink); border-radius:18px;
@@ -163,14 +163,20 @@ body{
 /* HUD helper text */
 .dim{ color:var(--muted) }
 
-/* Confetti uses point colors */
+/* Confetti */
 .confetti{ position:fixed; top:-10px; left:0; width:8px; height:12px; border-radius:2px; z-index:9999 }
-</style>
 
+/* Resume toast */
+.resume-toast{
+  position:fixed; left:50%; transform:translateX(-50%);
+  bottom:1rem; background:#eef7ff; color:#0e1b35;
+  border:1px solid #cfe2ff; border-radius:12px; padding:.6rem .9rem;
+  box-shadow:0 8px 24px rgba(13,31,64,.10); display:none; z-index:9999;
+}
+</style>
 </head>
 <body>
 
-<!-- Include global navbar (light) -->
 {% include 'nav.html' %}
 
 <div class="container pb-5 mt-4">
@@ -188,7 +194,7 @@ body{
     </div>
   </div>
 
-  <!-- Board (kept dark for drama) -->
+  <!-- Board -->
   <div class="board-wrap border-0 mb-3 p-3">
     <div class="board" id="board"></div>
   </div>
@@ -208,8 +214,9 @@ body{
   </div>
 </div>
 
-<!-- Line toast -->
+<!-- Toasts -->
 <div class="toastline" id="toastLine"><i class="bi bi-trophy me-1"></i> Line completed! +20 XP</div>
+<div class="resume-toast" id="resumeToast"><i class="bi bi-clock-history me-1"></i> Resumed your saved board.</div>
 
 <!-- Question Modal -->
 <div class="modal fade" id="qModal" tabindex="-1" aria-hidden="true">
@@ -235,10 +242,16 @@ body{
           <i class="bi bi-lock-fill me-1"></i> This cell is locked (already checked).
         </div>
       </div>
-      <div class="modal-footer">
-        <button class="btn btn-ghost" id="modalClearBtn" type="button"><i class="bi bi-eraser"></i> Clear</button>
-        <button class="btn btn-gradient" id="modalCheckBtn" type="button">Check</button>
-      </div>
+<div class="modal-footer">
+  <button class="btn btn-ghost" id="modalClearBtn" type="button">
+    <i class="bi bi-eraser"></i> Clear
+  </button>
+  <button class="btn btn-gradient" id="modalCheckBtn" type="button">Check</button>
+  <button class="btn btn-ghost" id="modalCloseBtn" type="button" data-bs-dismiss="modal" style="display:none">
+    <i class="bi bi-x-circle me-2"></i> Close
+  </button>
+</div>
+
     </div>
   </div>
 </div>
@@ -246,11 +259,12 @@ body{
 <!-- JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-/* ========= Data ========= */
+/* ========= Template data ========= */
 const RAW = {{ qs|tojson }};
+const QUIZ_ID = {{ quiz_id }};
 const BOARD_SIZE = 4, TOTAL = 16;
 
-/* Map by fixed board position (0..15) */
+/* ========= Build fixed-position map ========= */
 const POSMAP = {};
 for (const q of RAW){
   const p = (q.extra_parsed && typeof q.extra_parsed.pos === 'number') ? q.extra_parsed.pos : null;
@@ -258,12 +272,42 @@ for (const q of RAW){
 }
 const QUESTIONS = Array.from({length:16}, (_,i)=> POSMAP[i]);
 
-/* ========= State ========= */
+/* ========= State (with persistence) ========= */
 let lives = 3, xp = 0, lines = 0;
 let selectedPos = null;
 let answered = new Set();
 let correct = new Set();
 let awardedLines = new Set();
+
+const LS_KEY = (id)=> `bingo_state_${id}`;
+function exportState(){
+  return {
+    lives, xp, lines,
+    answered: [...answered],
+    correct:  [...correct],
+    awardedLines: [...awardedLines],
+    ts: Date.now()
+  };
+}
+function saveState(){
+  try{ localStorage.setItem(LS_KEY(QUIZ_ID), JSON.stringify(exportState())); }catch(e){}
+}
+function loadState(){
+  try{
+    const raw = localStorage.getItem(LS_KEY(QUIZ_ID));
+    if(!raw) return false;
+    const s = JSON.parse(raw);
+    if(!s || typeof s!=='object') return false;
+    lives = Number.isFinite(s.lives)? s.lives : lives;
+    xp    = Number.isFinite(s.xp)? s.xp : xp;
+    lines = Number.isFinite(s.lines)? s.lines : lines;
+    answered = new Set(Array.isArray(s.answered)? s.answered : []);
+    correct  = new Set(Array.isArray(s.correct)?  s.correct  : []);
+    awardedLines = new Set(Array.isArray(s.awardedLines)? s.awardedLines : []);
+    return true;
+  }catch(e){ return false; }
+}
+function clearState(){ try{ localStorage.removeItem(LS_KEY(QUIZ_ID)); }catch(e){} }
 
 /* ========= Elements ========= */
 const board = document.getElementById('board');
@@ -277,9 +321,12 @@ const finishCard = document.getElementById('finishCard');
 const finishTitle = document.getElementById('finishTitle');
 const finishStats = document.getElementById('finishStats');
 
+const resumeToast = document.getElementById('resumeToast');
+
 /* Modal refs */
 const qModalEl = document.getElementById('qModal');
-const qModal = new bootstrap.Modal(qModalEl);
+const qModal = new bootstrap.Modal(qModalEl, { backdrop: 'static', keyboard: false });
+
 const modalCellTitle = document.getElementById('modalCellTitle');
 const modalTypeBadge = document.getElementById('modalTypeBadge');
 const modalPrompt = document.getElementById('modalPrompt');
@@ -292,6 +339,7 @@ const modalFeedback = document.getElementById('modalFeedback');
 const modalLockHint = document.getElementById('modalLockHint');
 const modalClearBtn = document.getElementById('modalClearBtn');
 const modalCheckBtn = document.getElementById('modalCheckBtn');
+const modalCloseBtn = document.getElementById('modalCloseBtn');
 
 /* ========= Helpers ========= */
 function typeMeta(t){
@@ -320,11 +368,20 @@ function renderBoard(){
   board.innerHTML = '';
   for (let i=0;i<TOTAL;i++){
     const q = QUESTIONS[i];
-    const m = typeMeta(q?.qtype);
     const cell = document.createElement('div');
     cell.className = 'cell';
     cell.dataset.pos = i;
 
+    if (!q){ // safety if any slot missing
+      cell.innerHTML = `<div class="inner"><div class="face front">
+        <div class="text-center text-secondary">Loading…</div>
+      </div></div>`;
+      cell.classList.add('locked');
+      board.appendChild(cell);
+      continue;
+    }
+
+    const m = typeMeta(q.qtype);
     cell.innerHTML = `
       <div class="inner">
         <div class="face front">
@@ -377,9 +434,11 @@ function openModalFor(pos){
 
   modalPrompt.innerHTML = formatPrompt(q.prompt||'');
   modalFeedback.innerHTML = '';
-  modalLockHint.style.display = answered.has(pos) ? 'block' : 'none';
-  modalClearBtn.disabled = answered.has(pos);
-  modalCheckBtn.disabled = answered.has(pos);
+
+  const isSolved   = correct.has(pos);
+  const isAnswered = answered.has(pos);
+
+  modalLockHint.style.display = isAnswered ? 'block' : 'none';
 
   hideAllModalBlocks();
 
@@ -395,16 +454,34 @@ function openModalFor(pos){
         [...modalMCQ.children].forEach(x=>x.classList.remove('sel'));
         b.classList.add('sel');
       });
-      if (answered.has(pos)) b.disabled = true;
+      if (isAnswered) b.disabled = true;
       modalMCQ.appendChild(b);
     });
+
+
+    if (isAnswered){
+      const corrIx = ['A','B','C','D'].indexOf(String(q.correct||'').toUpperCase());
+      [...modalMCQ.children].forEach((btn,idx)=>{
+        btn.disabled = true;
+        if (idx === corrIx) btn.classList.add('correct');
+        else btn.classList.add('opacity-50');
+      });
+    }
+
   } else if (q.qtype==='short'){
     modalShort.style.display='block';
-    modalShortInput.value = ''; modalShortInput.disabled = answered.has(pos);
+    modalShortInput.value = '';
+    modalShortInput.disabled = isAnswered;
+
   } else {
     modalLong.style.display='block';
-    modalLongInput.value = ''; modalLongInput.disabled = answered.has(pos);
+    modalLongInput.value = '';
+    modalLongInput.disabled = isAnswered;
   }
+
+  if (isSolved) setFooter('solved');
+  else if (isAnswered) setFooter('locked');
+  else setFooter('default');
 
   qModal.show();
 }
@@ -438,6 +515,7 @@ document.getElementById('modalClearBtn').addEventListener('click', ()=>{
 });
 document.getElementById('modalCheckBtn').addEventListener('click', onModalCheck);
 
+// ===== Check handler (shows result, never auto-closes the modal) =====
 function onModalCheck(){
   if (selectedPos===null) return;
   const q = QUESTIONS[selectedPos];
@@ -484,41 +562,44 @@ function onModalCheck(){
     xp += 10;
     modalFeedback.innerHTML = `<div class="alert alert-success mb-0">Correct! +10 XP</div>`;
     awardLinesIfAny();
+    setFooter('solved');  // swap to Close, keep modal open
   } else {
     lives--;
     modalFeedback.insertAdjacentHTML('afterbegin', `<div class="alert alert-danger mb-2">Wrong. -1 life</div>`);
+    setFooter('locked');  // swap to Close, keep modal open
     if (lives <= 0){
-      qModal.hide(); endBoard("Out of lives!");
+      endBoard("Out of lives!");   // show finish card
+      return;                      // don't hide the modal; user will press Close
     }
   }
 
-  document.getElementById('modalClearBtn').disabled = true;
-  document.getElementById('modalCheckBtn').disabled = true;
-
   updateHUD();
   renderBoard();
+  saveState();
 
+  // If board is done, show finish card but DO NOT hide the modal automatically.
   if (answered.size === TOTAL || correct.size === TOTAL){
-    qModal.hide();
     endBoard("Board completed!");
+    setFooter('solved'); // keep Close visible
   }
 }
+
 
 /* ========= Lines / Confetti ========= */
 function awardLinesIfAny(){
   const newLines = computeCompletedLines(correct);
-  let awarded = 0;
+  let newlyAwarded = 0;
   newLines.forEach(idx=>{
     if (!awardedLines.has(idx)){
       awardedLines.add(idx);
-      awarded++;
+      newlyAwarded++;
     }
   });
-  if (awarded>0){
-    lines += awarded;
-    xp += 20 * awarded;
+  if (newlyAwarded>0){
+    lines += newlyAwarded;
+    xp += 20 * newlyAwarded;
     showToast();
-    shootConfetti(28 + 12*awarded);
+    shootConfetti(28 + 12*newlyAwarded);
   }
 }
 
@@ -551,6 +632,7 @@ function endBoard(reason){
   finishCard.style.display='block';
   finishTitle.textContent = reason || "Board complete!";
   finishStats.textContent = `Solved: ${correct.size}/${TOTAL} • Lines: ${lines} • XP: ${xp}`;
+  clearState(); // board finished; discard saved progress
 }
 
 /* ========= Toast + Confetti ========= */
@@ -558,6 +640,10 @@ function showToast(){
   const el = document.getElementById('toastLine');
   el.style.display='block';
   setTimeout(()=> el.style.display='none', 1500);
+}
+function showResumeToast(){
+  resumeToast.style.display='block';
+  setTimeout(()=> resumeToast.style.display='none', 1400);
 }
 
 function shootConfetti(n=30){
@@ -584,10 +670,43 @@ function shootConfetti(n=30){
     setTimeout(()=> p.remove(), fall);
   }
 }
+// ===== Footer state helper =====
+function setFooter(mode){
+  // mode: 'default' | 'locked' | 'solved'
+  if (mode === 'solved'){
+    modalClearBtn.style.display = 'none';
+    modalCheckBtn.style.display = 'none';
+    modalCloseBtn.style.display = 'inline-flex';
+    modalClearBtn.disabled = true;
+    modalCheckBtn.disabled = true;
+    return;
+  }
+  if (mode === 'locked'){ // already answered (wrong or solved)
+    modalClearBtn.style.display = 'none';
+    modalCheckBtn.style.display = 'none';
+    modalCloseBtn.style.display = 'inline-flex';
+    modalClearBtn.disabled = true;
+    modalCheckBtn.disabled = true;
+    return;
+  }
+  // default (fresh question)
+  modalClearBtn.style.display = 'inline-flex';
+  modalCheckBtn.style.display = 'inline-flex';
+  modalCloseBtn.style.display = 'none';
+  modalClearBtn.disabled = false;
+  modalCheckBtn.disabled = false;
+}
 
 /* ========= Start ========= */
-renderBoard();
-updateHUD();
+(function init(){
+  const hadState = loadState();
+  renderBoard();
+  updateHUD();
+  if (hadState && (answered.size>0 || correct.size>0)) showResumeToast();
+
+  // Save often & safely
+  window.addEventListener('beforeunload', saveState);
+})();
 </script>
 </body>
 </html>

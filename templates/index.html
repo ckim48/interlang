@@ -14,6 +14,12 @@
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" sizes="180x180">
 
 <style>
+/* PERFORMANCE OPTIMIZATION NOTES:
+  1. backdrop-filter (on .btn-ghost, .contact-tile) removed.
+  2. .grid animation changed from background-position to transform.
+  3. .glow mix-blend-mode removed.
+*/
+
 :root{
   /* Light theme tokens */
   --ink:#0e1b35;               /* primary text */
@@ -39,42 +45,46 @@ body{
 /* ===== Background stack: airy blobs + subtle grid + cursor glow ===== */
 .hero-bg{ position:fixed; inset:0; z-index:-3; overflow:hidden; }
 .hero-bg::before{
-  content:""; position:absolute; inset:-20vmax; filter:blur(60px); opacity:.9;
+  content:""; position:absolute; inset:-20vmax; /* keep large for bleed */
+  opacity:.85;
   background:
-    radial-gradient(36vmax 36vmax at 15% 20%, #e8f0ff 0%, transparent 70%),
-    radial-gradient(32vmax 32vmax at 85% 10%, #eef4ff 0%, transparent 70%),
-    radial-gradient(30vmax 30vmax at 15% 85%, #f4f8ff 0%, transparent 70%),
-    conic-gradient(from 210deg at 70% 40%, rgba(110,168,254,.22), rgba(143,155,255,.18), rgba(110,168,254,.16), transparent 60%);
-  animation:meshShift 24s ease-in-out infinite alternate;
+    radial-gradient(36vmax 36vmax at 15% 20%, #eef4ff 0%, transparent 70%),
+    radial-gradient(32vmax 32vmax at 85% 10%, #f5f8ff 0%, transparent 70%),
+    radial-gradient(30vmax 30vmax at 15% 85%, #f7faff 0%, transparent 70%);
+  animation: meshShift 24s ease-in-out infinite alternate;
+  will-change: transform;
 }
+
 @keyframes meshShift{
   0%{transform:translate3d(0,0,0) scale(1)}
   50%{transform:translate3d(-2vmax,1vmax,0) scale(1.02)}
   100%{transform:translate3d(2vmax,-1vmax,0) scale(1.01)}
 }
 
-/* light animated grid */
+/* light animated grid - OPTIMIZED: transform animation */
 .grid{
   position:absolute; inset:-4rem; z-index:-2; opacity:.35;
   background:
     repeating-linear-gradient(0deg, var(--grid) 0 1px, transparent 1px 32px),
     repeating-linear-gradient(90deg, var(--grid) 0 1px, transparent 1px 32px);
-  transform:perspective(800px) rotateX(55deg) translateY(20%);
+  /* Use translate to move the grid for better performance */
+  transform:perspective(800px) rotateX(55deg) translateY(20%) translateZ(0);
   animation:gridDrift 22s linear infinite;
   mask-image: radial-gradient(60% 60% at 50% 40%, black 40%, transparent 100%);
+  will-change: transform;
 }
+/* New animation using transform */
 @keyframes gridDrift{
-  0%{background-position:0 0, 0 0}
-  100%{background-position:0 64px, 64px 0}
+  0%{transform:perspective(800px) rotateX(55deg) translateY(20%) translateZ(0)}
+  100%{transform:perspective(800px) rotateX(55deg) translateY(calc(20% + 64px)) translateZ(0)}
 }
 
-/* cursor-follow glow (very subtle) */
+/* cursor-follow glow (very subtle) - OPTIMIZED: removed mix-blend-mode */
 .glow{
   position:absolute; inset:0; z-index:-1; pointer-events:none;
   background: radial-gradient(22rem 22rem at var(--mx,50%) var(--my,50%),
-             rgba(59,130,246,.12), rgba(143,155,255,.08) 38%, transparent 60%);
+             rgba(59,130,246,.08), rgba(143,155,255,.05) 38%, transparent 60%);
   transition: background-position .12s linear;
-  mix-blend-mode:screen;
 }
 
 /* ===== Hero ===== */
@@ -105,11 +115,21 @@ body{
 .actions{ display:flex; flex-wrap:wrap; gap:.6rem; margin-top:12px }
 .actions .btn{ border-radius:14px; padding:.5rem .9rem; font-weight:700; font-size:.92rem }
 .btn-brand{
-  background:linear-gradient(90deg,var(--brand),var(--accent)); color:white; border:0;
+   background:#737EF0;
   box-shadow:0 6px 16px rgba(59,130,246,.25);
+  padding: 14px 28px !important;
+  color:white;
+
 }
+.btn-brand:hover{
+
+    background:linear-gradient(90deg,var(--brand),var(--accent)); color:black; border:0;
+
+}
+/* OPTIMIZED: Removed backdrop-filter */
 .btn-ghost{
-  border:1px solid #d9e2ff; color:#223357; background:#ffffffaa; backdrop-filter:blur(6px);
+  border:1px solid #d9e2ff; color:#223357;
+  background:#ffffffe0; /* Used high-opacity RGBA instead */
 }
 
 /* feature strip (light chips) */
@@ -235,20 +255,6 @@ body{
 @media (prefers-reduced-motion:reduce){
   .about-img-b{ transform:none }
 }
-
-</style>
-</head>
-<body>
-
-<div class="hero-bg">
-  <div class="grid"></div>
-  <div class="glow"></div>
-</div>
-
-{% include 'nav.html' %}
-
-<!-- Override dark nav to light without editing nav.html -->
-<style>
 
   /* ===== Features: primary grid (light, no cards) ===== */
 .features-section{
@@ -467,13 +473,13 @@ body{
 .contact-right{ justify-self:end }
 @media (max-width: 992px){ .contact-right{ justify-self:center } }
 
+/* OPTIMIZED: Removed backdrop-filter */
 .contact-tile{
   display:flex; align-items:center; gap:10px;
   padding:10px 12px; border-radius:16px;
-  background:linear-gradient(180deg,#ffffff,#f6f9ff);
+  background:linear-gradient(180deg,#ffffffb0,#f6f9ffb0); /* Used high-opacity RGBA instead */
   border:1px solid #e6ecff;
   box-shadow:0 14px 42px rgba(13,31,64,.08);
-  backdrop-filter: blur(6px);
 }
 
 .contact-email{
@@ -512,10 +518,19 @@ body{
 }
 
 </style>
+</head>
+<body>
+
+<div class="hero-bg">
+  <div class="grid"></div>
+  <div class="glow"></div>
+</div>
+
+{# Note: I'm assuming you'll keep 'nav.html' separate as provided #}
+{% include 'nav.html' %}
 
 <section class="hero">
   <div class="wrap" data-aos="fade-up" data-aos-duration="900">
-    <!-- LEFT -->
     <div>
       <h1 class="title" data-aos="fade-up" data-aos-delay="60">
         Learn languages with focus — not clutter
@@ -534,12 +549,11 @@ body{
         <span class="badge-soft">Streaks</span>
       </div>
 
-      <div class="actions" data-aos="fade-up" data-aos-delay="260">
+      <div class="actions mt-3" data-aos="fade-up" data-aos-delay="260">
         <a href="{{ url_for('login') }}" class="btn btn-brand">Start now</a>
       </div>
     </div>
 
-    <!-- RIGHT: YOUR IMAGE -->
     <div class="stage" aria-hidden="true" data-aos="zoom-in" data-aos-delay="120">
       <img
         class="hero-img ms-md-3"
@@ -551,7 +565,6 @@ body{
 </section>
 <section class="about-section" id="about">
   <div class="about-wrap" data-aos="fade-up" data-aos-duration="900">
-    <!-- LEFT: copy -->
     <div class="about-copy" data-aos="fade-right" data-aos-delay="60">
       <span class="about-overline"><i class="bi bi-stars"></i> About InterLang</span>
       <h2 class="about-title">We build language learning that respects your focus</h2>
@@ -573,7 +586,6 @@ body{
       </div>
     </div>
 
-    <!-- RIGHT: images -->
     <div class="about-gallery" data-aos="fade-left" data-aos-delay="120">
       <div class="about-img about-img-a">
         <img src="{{ url_for('static', filename='img/about-main.jpg') }}" alt="Practice preview"/>
@@ -587,7 +599,6 @@ body{
 </section>
 <section class="features-section" id="features">
   <div class="features-wrap features-grid" data-aos="fade-up" data-aos-duration="900">
-    <!-- LEFT: feature list (unchanged content, kept clean) -->
     <div>
       <header class="features-head">
         <h2 class="features-title">Designed to keep you in flow</h2>
@@ -635,7 +646,6 @@ body{
       </ul>
     </div>
 
-    <!-- RIGHT: redesigned “How it works” rail -->
     <aside class="flow-rail" aria-hidden="false" data-aos="fade-left" data-aos-delay="120">
       <header class="flow-head">
         <span class="flow-pill"><i class="bi bi-magic"></i> How it works</span>
@@ -646,7 +656,6 @@ body{
         </div>
       </header>
 
-      <!-- subtle segmented progress bar -->
       <div class="segbar" aria-hidden="true">
         <span style="--f:0.7"></span>
       </div>
@@ -675,7 +684,6 @@ body{
         </li>
       </ol>
 
-      <!-- tiny floating hints -->
       <div class="flow-hints">
         <span class="hint"><i class="bi bi-lightning-charge-fill"></i> Adaptive</span>
         <span class="hint"><i class="bi bi-soundwave"></i> Speaking</span>
@@ -747,14 +755,34 @@ body{
 <script src="https://cdnjs.cloudflare.com/ajax/libs/aos/2.3.4/aos.js"></script>
 <script>
   AOS.init({duration:800, once:true});
+
+  // Throttle utility function to limit how often a function can run
+  function throttle(func, limit) {
+    let inThrottle;
+    return function() {
+      const args = arguments;
+      const context = this;
+      if (!inThrottle) {
+        func.apply(context, args);
+        inThrottle = true;
+        setTimeout(() => inThrottle = false, limit);
+      }
+    }
+  }
+
   // Parallax glow follows cursor
   const glow = document.querySelector('.glow');
-  window.addEventListener('pointermove', (e)=>{
+
+  // Optimized: Use throttled function to update glow position only 20 times per second (50ms interval)
+  const updateGlow = throttle((e) => {
+    if (!glow) return;
     const x = (e.clientX / window.innerWidth) * 100;
     const y = (e.clientY / window.innerHeight) * 100;
-    glow?.style.setProperty('--mx', x + '%');
-    glow?.style.setProperty('--my', y + '%');
-  });
+    glow.style.setProperty('--mx', x + '%');
+    glow.style.setProperty('--my', y + '%');
+  }, 50); // Throttle to run max once every 50ms
+
+  window.addEventListener('pointermove', updateGlow);
 </script>
 </body>
 </html>

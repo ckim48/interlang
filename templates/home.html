@@ -8,7 +8,7 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
   <link rel="icon" href="{{ url_for('static', filename='img/favicon.png') }}" sizes="32x32">
-<link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" sizes="180x180">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" sizes="180x180">
 
   <style>
     :root{
@@ -29,7 +29,7 @@
       background-attachment: fixed;
     }
 
-    /* Page header (adds colored rule + chips for color anchors) */
+    /* Page header */
     .page-header{
       background: linear-gradient(180deg, #ffffff, #f7faff);
       border: 1px solid #e6ecff; border-radius:20px; padding:24px;
@@ -62,7 +62,7 @@
     }
     .section-sub{ color:var(--muted); }
 
-    /* Quiz cards (bright) with accent spine for color) */
+    /* Quiz cards */
     .quiz-card{
       border: 1px solid #e6ecff; background: linear-gradient(180deg, #ffffff, #f7faff);
       border-radius:18px; box-shadow: 0 10px 28px rgba(13,31,64,.06);
@@ -89,7 +89,7 @@
     }
     .meta{ color:#4b5567; }
 
-    /* Custom action buttons (no .btn-primary) */
+    /* Buttons */
     .btn-action{
       font-weight:800; border-radius:12px; border:0;
       background: linear-gradient(90deg, var(--brand), var(--accent));
@@ -103,6 +103,14 @@
       border:1px solid #e6ecff; color:#6b7280 !important;
     }
     .btn-locked:disabled{ opacity:1; }
+
+    /* New Quiz outlined variant */
+    .btn-outline-danger{
+      border-radius:12px; font-weight:800; border:1px solid #fecaca;
+      background:linear-gradient(180deg,#fff,#fff);
+      color:#b91c1c !important;
+    }
+    .btn-outline-danger:hover{ background:#fff5f5 }
 
     .card-locked{ opacity:.98 }
     .lock-overlay{
@@ -121,10 +129,45 @@
     }
     .kpi b{ font-size:.95rem }
     .kpi small{ font-size:.72rem; font-weight:700; color:#60719a }
+
+    /* ===== Loading Overlay ===== */
+    .loading-overlay{
+      position: fixed; inset: 0; z-index: 99999; display: none;
+      align-items: center; justify-content: center; flex-direction: column;
+      background:
+        radial-gradient(40vmax 40vmax at 20% 10%, rgba(238,244,255,.9), transparent 70%),
+        radial-gradient(36vmax 36vmax at 80% 0%, rgba(243,246,255,.9), transparent 70%),
+        radial-gradient(34vmax 34vmax at 10% 90%, rgba(247,250,255,.9), transparent 70%),
+        rgba(255,255,255,.7);
+      backdrop-filter: blur(6px);
+    }
+    .loading-card{
+      background: linear-gradient(180deg, #ffffff, #f7faff);
+      border:1px solid #e6ecff; border-radius:18px;
+      box-shadow: 0 18px 44px rgba(13,31,64,.12);
+      padding:28px 26px; text-align:center; max-width: 420px; width: calc(100% - 32px);
+    }
+    .loading-title{
+      font-weight: 900; color:#0f1a33; letter-spacing:.2px; margin-top:12px;
+      background: linear-gradient(90deg, var(--brand), var(--accent));
+      -webkit-background-clip:text; background-clip:text; color: transparent;
+    }
+    .loading-sub{ color:#4b5567; }
   </style>
 </head>
 <body>
   {% include 'nav.html' %}
+
+  <!-- Loading Overlay -->
+  <div id="loadingOverlay" class="loading-overlay" aria-hidden="true">
+    <div class="loading-card">
+      <div class="d-flex justify-content-center">
+        <div class="spinner-border" role="status" aria-label="Loading"></div>
+      </div>
+      <h2 class="h5 loading-title">Building your bingo board…</h2>
+      <p class="loading-sub mb-0">It takes a moment to generate the quiz....</p>
+    </div>
+  </div>
 
   <div class="container pb-5 mt-4">
     <!-- Header -->
@@ -187,15 +230,22 @@
                 {% endif %}
               </div>
               <div class="meta mb-3">4×4 Bingo • 16 cells • 3 lives</div>
-              <div class="d-grid">
+
+              <div class="d-grid d-sm-flex gap-2">
                 {% if locked %}
-                  <button class="btn btn-locked" disabled>
+                  <button class="btn btn-locked w-100" disabled>
                     <i class="bi bi-lock-fill me-1"></i> Locked
                   </button>
                 {% else %}
-                  <!-- replaced .btn-primary with .btn-action and forced white text -->
-                  <a class="btn btn-action" href="{{ url_for('start_quiz', level=lvl) }}">
-                    <i class="bi bi-play-fill me-1"></i> Start
+                  <a class="btn btn-action start-quiz-btn flex-fill"
+                     href="{{ url_for('start_quiz', level=lvl) }}"
+                     data-level="{{ lvl }}">
+                    <i class="bi bi-play-fill me-1"></i> Continue
+                  </a>
+                  <a class="btn btn-outline-danger new-quiz-btn flex-fill"
+                     href="{{ url_for('start_quiz', level=lvl) }}?new=1"
+                     data-level="{{ lvl }}">
+                    <i class="bi bi-arrow-repeat me-1"></i> New Quiz
                   </a>
                 {% endif %}
               </div>
@@ -209,7 +259,64 @@
     </div>
   </div>
 
-  <!-- Ensure navbar dropdowns work -->
+  <!-- Scripts -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+  (function(){
+    const overlay = document.getElementById('loadingOverlay');
+    let navByButton = false;
+
+    function showOverlay(){
+      if (!overlay) return;
+      overlay.style.display = 'flex';
+      overlay.setAttribute('aria-hidden','false');
+    }
+    function hideOverlay(){
+      if (!overlay) return;
+      overlay.style.display = 'none';
+      overlay.setAttribute('aria-hidden','true');
+    }
+
+    // Only show overlay for explicit Start/New clicks
+    document.addEventListener('click', function(e){
+      const a = e.target.closest('.start-quiz-btn, .new-quiz-btn');
+      if (!a) return;
+
+      // Ignore modified clicks/new tab
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button === 1) return;
+
+      e.preventDefault();
+      a.classList.add('disabled');
+      a.setAttribute('aria-disabled','true');
+      a.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> Preparing…';
+
+      // Clear saved boards only for "New Quiz"
+      if (a.classList.contains('new-quiz-btn')) {
+        try {
+          Object.keys(localStorage).forEach(k => {
+            if (k.startsWith('bingo_state_')) localStorage.removeItem(k);
+          });
+        } catch(_) {}
+      }
+
+      navByButton = true;
+      showOverlay();
+      setTimeout(()=> { window.location.href = a.getAttribute('href'); }, 50);
+    }, false);
+
+    // Show overlay on unload only if we initiated via our buttons
+    window.addEventListener('beforeunload', function(){
+      if (navByButton) showOverlay();
+    });
+
+    // If returning via back/forward cache, ensure overlay is hidden
+    window.addEventListener('pageshow', function(){
+      hideOverlay();
+    });
+
+    // Hide on initial paint just in case
+    document.addEventListener('DOMContentLoaded', hideOverlay);
+  })();
+  </script>
 </body>
 </html>

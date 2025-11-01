@@ -84,16 +84,28 @@ TITLES = {
     "FIRST_STEPS":   {"title": "Newcomer",    "icon": "bi-rocket-takeoff", "priority": 5},
 }
 DEFAULT_TITLE = {"title": None, "icon": None, "priority": 999}
+def _norm_prompt(s: str) -> str:
+    return re.sub(r"\s+", " ", (s or "").strip().lower())
 
 def title_priority(code):
     return TITLES.get(code, DEFAULT_TITLE)["priority"]
 
 # -------------------- DB helpers --------------------
+# -------------------- DB helpers --------------------
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(DB_PATH)
+        g.db = sqlite3.connect(
+            DB_PATH,
+            timeout=30,
+            check_same_thread=False
+        )
         g.db.row_factory = sqlite3.Row
+        g.db.execute("PRAGMA busy_timeout = 30000;")
+        g.db.execute("PRAGMA journal_mode = WAL;")
+        g.db.execute("PRAGMA synchronous = NORMAL;")
+        g.db.execute("PRAGMA foreign_keys = ON;")
     return g.db
+
 
 @app.teardown_appcontext
 def close_db(_exc):
@@ -161,7 +173,7 @@ def stories():
     username = session["username"]
     db = get_db()
 
-    # user header
+    # user header (unchanged)
     u = db.execute("SELECT level, xp, title_code FROM users WHERE username=?", (username,)).fetchone()
     user_level = u["level"] if u else 1
     user_xp    = u["xp"] if u else 0
@@ -178,36 +190,47 @@ def stories():
     try:    difficulty = int(request.args.get("difficulty")) if request.args.get("difficulty") else None
     except: difficulty = None
 
+    # NEW: optional "ready only" toggle
+    ready_only = (request.args.get("ready") == "1")
+
     # pagination inputs
     try:    page = max(1, int(request.args.get("page", 1)))
     except: page = 1
     PAGE_SIZE = 12
     MAX_PAGES = 5
 
-    # fetch all matches (no limit), then prioritize generated-first
+    # fetch all matches (no limit), then ensure records exist
     items_all = recommend_stories(
         age=age, difficulty=difficulty, q=q or None,
         category=category or None, theme=theme or None, limit=None
     )
-
-    # Ensure meta exists (idempotent, content may still be empty)
     for s in items_all:
-        try: ensure_story_record(s["slug"], s)
-        except Exception: pass
+        try:
+            ensure_story_record(s["slug"], s)
+        except Exception:
+            pass
 
-    # Find which slugs are already generated (content non-empty)
-    slugs = tuple(s["slug"] for s in items_all)
+    # Identify which are already generated (content non-empty)
     generated = set()
+    slugs = tuple(s["slug"] for s in items_all)
     if slugs:
         qmarks = ",".join(["?"] * len(slugs))
         rows = db.execute(
-            f"SELECT slug FROM stories WHERE slug IN ({qmarks}) AND COALESCE(NULLIF(content,''), '') <> ''",
+            f"""
+            SELECT slug FROM stories
+            WHERE slug IN ({qmarks})
+              AND COALESCE(NULLIF(content,''), '') <> ''
+            """,
             slugs
         ).fetchall()
         generated = {r["slug"] for r in rows}
 
-    # Stable sort: generated first, then the earlier ranking already in items_all order
-    items_all.sort(key=lambda s: (0 if s["slug"] in generated else 1))
+    # If user asked for "ready only", filter here
+    if ready_only:
+        items_all = [s for s in items_all if s["slug"] in generated]
+
+    # Sort: generated first, then by title for stability
+    items_all.sort(key=lambda s: (0 if s["slug"] in generated else 1, (s.get("title") or "").lower()))
 
     # paginate with a hard cap of 5 pages
     total_items = len(items_all)
@@ -226,7 +249,10 @@ def stories():
         title_icon=title_icon,
         items=items,
         q=q, category=category, theme=theme, age=age, difficulty=difficulty,
-        page=page, total_pages=total_pages, page_size=PAGE_SIZE, total_items=total_items
+        page=page, total_pages=total_pages, page_size=PAGE_SIZE, total_items=total_items,
+        # NEW: pass these so the template can show badges and keep the toggle state
+        generated_slugs=generated,
+        ready_only=ready_only
     )
 
 def seed_achievements(db):
@@ -443,6 +469,8 @@ def init_db(seed=True):
     ensure_column(db, "users", "title_code", "TEXT")
     ensure_column(db, "attempts", "lines_completed", "INTEGER NOT NULL DEFAULT 0")
     ensure_column(db, "users", "password_hash", "TEXT")
+    ensure_column(db, "vocab", "bookmarked", "INTEGER NOT NULL DEFAULT 0")
+
     db.commit()
 
 # -------------------- Local word pools --------------------
@@ -509,131 +537,368 @@ WORD_POOLS = {
         }
     }
 }
-
-# -------------------- GPT quiz (optional) --------------------
 def gpt_generate_quiz(level: int):
+    """
+    Ask GPT for three arrays: mcq, short, long, sized by distribution_for_level(level).
+    Ages: 6–10 only; vocabulary and grammar must be age-appropriate.
+    """
     if not openai_client:
+        print("[GPT QUIZ] client not available -> returning None")
         return None
 
+    # pull exact counts from your board distribution
+    mcq_need, short_need, long_need = distribution_for_level(level)
+
+    # map level to simple guardrails
+    level_specs = {
+        1: dict(
+            cefr="CEFR A0–A1",
+            mcq_styles=["basic synonym (happy→joyful)", "very short fill-in (in/on/at/to)"],
+            short_hint="prepositions (in/on/at/to) and easy adverbs (slowly, quickly)",
+            long_len="8–14 words",
+            long_words_range=(2, 3),
+            examples_words=["dog","park","run","red","big","play"]
+        ),
+        2: dict(
+            cefr="CEFR A1",
+            mcq_styles=["synonym/antonym", "fill-in with common prepositions/adverbs"],
+            short_hint="prepositions/adverbs only; 1-word answers",
+            long_len="10–16 words",
+            long_words_range=(3, 4),
+            examples_words=["school","friend","story","river","quiet","walk","under","over"]
+        ),
+        3: dict(
+            cefr="CEFR A1–A2",
+            mcq_styles=["synonym + distractors", "short cloze (prepositions/adverbs)"],
+            short_hint="exact 1-word answers, still simple",
+            long_len="12–18 words",
+            long_words_range=(3, 4),
+            examples_words=["because","before","after","market","music","quickly","carefully"]
+        ),
+        4: dict(
+            cefr="CEFR A2",
+            mcq_styles=["synonym/closest meaning", "cloze with time/place prepositions"],
+            short_hint="one-word answers; avoid rare words",
+            long_len="14–20 words",
+            long_words_range=(4, 5),
+            examples_words=["adventure","help","learn","between","across","often","always"]
+        ),
+        5: dict(
+            cefr="CEFR A2+",
+            mcq_styles=["closest meaning; keep options concrete", "cloze with adverbs of manner/frequency"],
+            short_hint="one-word answers (preposition/adverb/conjunction like 'because')",
+            long_len="16–22 words",
+            long_words_range=(4, 5),
+            examples_words=["carefully","before","during","together","message","choice","bright","outside"]
+        ),
+    }
+    spec = level_specs.get(int(level), level_specs[2])
+
     system = (
-        "You are an English quiz generator for ESL learners. "
-        "Return strict JSON with arrays 'mcq' and 'sentence'. "
-        "MCQ must have 4 options and 'answer_index'. "
-        "Sentence must provide 'required_words' (list). Be concise."
+        "You are an English quiz generator for children aged 6–10.\n"
+        "Return STRICT JSON with exactly three keys: 'mcq', 'short', and 'long'.\n"
+        "No extra keys or commentary. Keep language simple, kid-friendly, and concrete.\n\n"
+        "Formats:\n"
+        "• mcq: array of items {prompt, options[4], answer_index(int 0..3)}\n"
+        "  - Prompts must be short and clear. Options must be single words (no phrases), age-appropriate.\n"
+        "• short: array of items {prompt, answer} where answer is ONE word (preposition/adverb/conjunction like 'because')\n"
+        "  - Prompts are cloze ('Fill the blank: ... ___ ...'). Keep sentences short and concrete.\n"
+        "• long: array of items {required_words[list of 2..6 strings], prompt(optional)}\n"
+        "  - If prompt is omitted, the app will show: 'Write one clear sentence using ALL of these words: ...'\n"
+        "  - required_words must be easy words only; no proper nouns; no slang; no scary/violent themes.\n"
     )
 
-    user = {
-        "level": level,
-        "counts": {"mcq": 12, "sentence": 6},
-        "mcq_styles": [
-            "synonym selection (1 correct + 3 distractors)",
-            "fill-in-the-blank with a preposition or adverb"
-        ],
-        "sentence_rule": "Provide REQUIRED words; user writes ONE sentence using ALL required words. 3-5 words per item."
+    # Build the exact request with counts bound to the chosen level
+    user_payload = {
+        "age_range": "6–10",
+        "cefr_target": spec["cefr"],
+        "level": int(level),
+        "counts": {"mcq": mcq_need, "short": short_need, "long": long_need},
+        "constraints": {
+            "use_only_kid_friendly_words": True,
+            "avoid_topics": ["violence", "romance", "politics", "religion", "scary content"],
+            "options_must_be_single_words": True,
+            "short_answer_is_single_word_only": True,
+        },
+        "mcq_styles": spec["mcq_styles"],
+        "short_rule": spec["short_hint"],
+        "long_rule": {
+            "target_sentence_length": spec["long_len"],
+            "required_words_count_range": list(spec["long_words_range"]),
+            "example_easy_words": spec["examples_words"],
+        }
     }
 
     try:
         resp = openai_client.chat.completions.create(
             model=OPENAI_MODEL,
             response_format={"type": "json_object"},
-            temperature=0.7,
+            temperature=0.4,  # low temp for cleaner options
             messages=[
                 {"role": "system", "content": system},
-                {"role": "user", "content": json.dumps(user)}
+                {"role": "user", "content": json.dumps(user_payload)}
             ],
         )
-        data = json.loads(resp.choices[0].message.content)
-        if not isinstance(data, dict):
-            return None
-        if "mcq" not in data or "sentence" not in data:
-            return None
-        if not isinstance(data["mcq"], list) or not isinstance(data["sentence"], list):
-            return None
+        raw = (resp.choices[0].message.content or "").strip()
+        print("\n================= [GPT QUIZ RAW] =================")
+        print(raw)
+        print("==================================================\n")
+
+        data = json.loads(raw)
+
+        # Back-compat if needed
+        if "long" not in data and "sentence" in data and isinstance(data["sentence"], list):
+            data["long"] = data["sentence"]
+        if "short" not in data: data["short"] = []
+        if "mcq" not in data:   data["mcq"]   = []
+
+        # Sanity: arrays only
+        if not isinstance(data.get("mcq", []), list):   data["mcq"] = []
+        if not isinstance(data.get("short", []), list): data["short"] = []
+        if not isinstance(data.get("long", []), list):  data["long"] = []
+
+        # Trim if GPT oversupplies
+        data["mcq"]   = data["mcq"][:mcq_need]
+        data["short"] = data["short"][:short_need]
+        data["long"]  = data["long"][:long_need]
+
+        # Log counts
+        print("[GPT QUIZ PARSED] keys:", list(data.keys()))
+        print("[GPT QUIZ COUNTS]", "mcq:", len(data["mcq"]), "short:", len(data["short"]), "long:", len(data["long"]))
+
         return data
-    except Exception:
+    except Exception as e:
+        print("[GPT QUIZ] exception:", repr(e))
         return None
 
-# -------------------- Local generators (board cells) --------------------
-def add_mcq_question(db, quiz_id: int, level: int, pos: int):
-    pool = WORD_POOLS[level]
-    if random.random() < 0.6 and pool.get("synonyms"):
-        base_word = random.choice(list(pool["synonyms"].keys()))
-        correct = random.choice(pool["synonyms"][base_word])
-        distractors = []
-        for cat in ("nouns","verbs","adjectives"):
-            distractors += random.sample(pool[cat], min(3, len(pool[cat])))
-        distractors = [w for w in distractors if w != correct][:3]
-        options = [correct] + distractors
-        random.shuffle(options)
-        correct_letter = "ABCD"[options.index(correct)]
-        prompt = f"Choose the synonym of “{base_word}”."
-        extra = {"mode":"synonym","base":base_word,"pos":pos}
+
+# -------------------- GPT inserters --------------------
+def insert_gpt_mcq(db, quiz_id: int, pos: int, item: dict, used_norm_prompts: set) -> bool:
+    """
+    item = {"prompt": str, "options": [str,str,str,str], "answer_index": int}
+    Returns True if inserted; False otherwise.
+    """
+    try:
+        prompt = str(item.get("prompt", "")).strip()
+        options = item.get("options", [])
+        ai = item.get("answer_index", None)
+
+        if not prompt or not isinstance(options, list) or len(options) < 4:
+            return False
+        if not isinstance(ai, int) or ai < 0 or ai > 3:
+            return False
+
+        n = _norm_prompt(prompt)
+        if n in used_norm_prompts:
+            return False
+
+        choice_a, choice_b, choice_c, choice_d = options[:4]
+        correct_letter = "ABCD"[ai]
+        extra = {"mode": "gpt", "pos": pos}
+
         db.execute(
             """INSERT INTO quiz_questions
                (quiz_id,qtype,prompt,choice_a,choice_b,choice_c,choice_d,correct,extra)
                VALUES (?,?,?,?,?,?,?,?,?)""",
-            (quiz_id,"mcq",prompt,options[0],options[1],options[2],options[3],correct_letter,json.dumps(extra))
+            (quiz_id, "mcq", prompt, choice_a, choice_b, choice_c, choice_d, correct_letter, json.dumps(extra))
         )
-    else:
-        preps = WORD_POOLS[level]["preps"]
-        adverbs = WORD_POOLS[level]["adverbs"]
-        if random.random() < 0.5 and len(preps) >= 4:
-            correct = random.choice(preps)
-            distractors = random.sample([p for p in preps if p != correct], 3)
-            sentence = "I will meet you ___ the park."
-            prompt = f"Fill in the blank with the best preposition:\n“{sentence}”"
+        used_norm_prompts.add(n)
+        return True
+    except Exception:
+        return False
+
+
+def insert_gpt_short(db, quiz_id: int, pos: int, item: dict, used_norm_prompts: set) -> bool:
+    """
+    item = {"prompt": str, "answer": str}
+    Returns True if inserted; False otherwise.
+    """
+    try:
+        prompt = str(item.get("prompt", "")).strip()
+        answer = str(item.get("answer", "")).strip()
+        if not prompt or not answer:
+            return False
+
+        n = _norm_prompt(prompt)
+        if n in used_norm_prompts:
+            return False
+
+        extra = {"mode": "gpt", "pos": pos}
+        db.execute(
+            """INSERT INTO quiz_questions (quiz_id,qtype,prompt,correct,extra)
+               VALUES (?,?,?,?,?)""",
+            (quiz_id, "short", prompt, answer, json.dumps(extra))
+        )
+        used_norm_prompts.add(n)
+        return True
+    except Exception:
+        return False
+
+
+def insert_gpt_long(db, quiz_id: int, pos: int, item: dict, used_norm_prompts: set) -> bool:
+    """
+    item = {"required_words": [str,...], "prompt": optional str}
+    If 'prompt' is missing, we synthesize one from required_words.
+    Returns True if inserted; False otherwise.
+    """
+    try:
+        req = item.get("required_words", [])
+        if not isinstance(req, list) or not req:
+            return False
+
+        prompt = (item.get("prompt") or f"Write a single clear sentence using ALL of these words: {', '.join(req)}.").strip()
+        if not prompt:
+            return False
+
+        n = _norm_prompt(prompt)
+        if n in used_norm_prompts:
+            return False
+
+        extra = {"required_words": req, "mode": "gpt", "pos": pos}
+        db.execute(
+            """INSERT INTO quiz_questions (quiz_id,qtype,prompt,correct,extra)
+               VALUES (?,?,?,?,?)""",
+            (quiz_id, "long", prompt, json.dumps(req), json.dumps(extra))
+        )
+        used_norm_prompts.add(n)
+        return True
+    except Exception:
+        return False
+
+
+# -------------------- Local unique generators (fallbacks) --------------------
+def add_mcq_question_unique(db, quiz_id: int, level: int, pos: int,
+                            used_norm_prompts: set, max_tries: int = 8) -> bool:
+    """
+    Generates a unique MCQ using WORD_POOLS[level].
+    Two modes:
+      - synonym mode (preferred when available)
+      - fill-in-the-blank (preposition/adverb)
+    """
+    for _ in range(max_tries):
+        pool = WORD_POOLS[level]
+
+        # Prefer synonym mode if available
+        if random.random() < 0.6 and pool.get("synonyms"):
+            base_word = random.choice(list(pool["synonyms"].keys()))
+            correct = random.choice(pool["synonyms"][base_word])
+            distractors = []
+            for cat in ("nouns", "verbs", "adjectives"):
+                distractors += random.sample(pool[cat], min(3, len(pool[cat])))
+            distractors = [w for w in distractors if w != correct][:3]
+            if len(distractors) < 3:
+                continue
+
             options = [correct] + distractors
+            random.shuffle(options)
+            correct_letter = "ABCD"[options.index(correct)]
+            prompt = f"Choose the synonym of “{base_word}”."
+            extra = {"mode": "synonym", "base": base_word, "pos": pos}
+
         else:
-            correct = random.choice(adverbs)
-            distractors = random.sample([a for a in adverbs if a != correct], 3)
-            base = random.choice(WORD_POOLS[level]["verbs"])
-            sentence = f"She will {base} ___ to finish the task."
-            prompt = f"Fill in the blank with the best adverb:\n“{sentence}”"
-            options = [correct] + distractors
-        random.shuffle(options)
-        correct_letter = "ABCD"[options.index(correct)]
-        extra = {"mode":"fill","sentence":sentence,"pos":pos}
+            # Fill-in-the-blank: preposition or adverb
+            preps = WORD_POOLS[level]["preps"]
+            adverbs = WORD_POOLS[level]["adverbs"]
+
+            if random.random() < 0.5 and len(preps) >= 4:
+                correct = random.choice(preps)
+                distractors = random.sample([p for p in preps if p != correct], 3)
+                sentence = "I will meet you ___ the park."
+                prompt = f"Fill in the blank with the best preposition:\n“{sentence}”"
+                options = [correct] + distractors
+            else:
+                correct = random.choice(adverbs)
+                distractors = random.sample([a for a in adverbs if a != correct], 3)
+                base = random.choice(WORD_POOLS[level]["verbs"])
+                sentence = f"She will {base} ___ to finish the task."
+                prompt = f"Fill in the blank with the best adverb:\n“{sentence}”"
+                options = [correct] + distractors
+
+            random.shuffle(options)
+            correct_letter = "ABCD"[options.index(correct)]
+            extra = {"mode": "fill", "sentence": sentence, "pos": pos}
+
+        n = _norm_prompt(prompt)
+        if n in used_norm_prompts:
+            continue
+
         db.execute(
             """INSERT INTO quiz_questions
                (quiz_id,qtype,prompt,choice_a,choice_b,choice_c,choice_d,correct,extra)
                VALUES (?,?,?,?,?,?,?,?,?)""",
-            (quiz_id,"mcq",prompt,options[0],options[1],options[2],options[3],correct_letter,json.dumps(extra))
+            (quiz_id, "mcq", prompt, options[0], options[1], options[2], options[3], correct_letter, json.dumps(extra))
         )
+        used_norm_prompts.add(n)
+        return True
 
-def add_short_question(db, quiz_id: int, level: int, pos: int):
-    pool = WORD_POOLS[level]
-    if random.random() < 0.7:
-        correct = random.choice(pool["preps"])
-        sentence = "I have lived here ___ 2019."
-        prompt = f"Fill the blank with the correct preposition:\n“{sentence}”"
-    else:
-        correct = random.choice(pool["adverbs"])
-        verb = random.choice(pool["verbs"])
-        sentence = f"They {verb} ___ to catch the bus."
-        prompt = f"Fill the blank with the best adverb:\n“{sentence}”"
-    extra = {"mode":"short","sentence":sentence,"pos":pos}
-    db.execute(
-        """INSERT INTO quiz_questions (quiz_id,qtype,prompt,correct,extra)
-           VALUES (?,?,?,?,?)""",
-        (quiz_id,"short",prompt, correct, json.dumps(extra))
-    )
+    return False
 
-def add_long_question(db, quiz_id: int, level: int, pos: int):
-    pool = WORD_POOLS[level]
-    required_count = {1:2, 2:3, 3:3, 4:4, 5:5}[level]
-    picks = []
-    picks += random.sample(pool["nouns"], min(2, len(pool["nouns"])))
-    picks += random.sample(pool["verbs"], min(2, len(pool["verbs"])))
-    picks += random.sample(pool["adjectives"], min(2, len(pool["adjectives"])))
-    random.shuffle(picks)
-    required = picks[:required_count]
-    prompt = f"Write a single clear sentence using ALL of these words: {', '.join(required)}."
-    extra = {"required_words": required, "pos": pos}
-    db.execute(
-        """INSERT INTO quiz_questions (quiz_id,qtype,prompt,correct,extra)
-           VALUES (?,?,?,?,?)""",
-        (quiz_id,"long",prompt, json.dumps(required), json.dumps(extra))
-    )
+
+def add_short_question_unique(db, quiz_id: int, level: int, pos: int,
+                              used_norm_prompts: set, max_tries: int = 8) -> bool:
+    """
+    Generates a unique SHORT item. Answer is a single short token (preposition/adverb).
+    """
+    for _ in range(max_tries):
+        pool = WORD_POOLS[level]
+        if random.random() < 0.7:
+            correct = random.choice(pool["preps"])
+            sentence = "I have lived here ___ 2019."
+            prompt = f"Fill the blank with the correct preposition:\n“{sentence}”"
+        else:
+            correct = random.choice(pool["adverbs"])
+            verb = random.choice(pool["verbs"])
+            sentence = f"They {verb} ___ to catch the bus."
+            prompt = f"Fill the blank with the best adverb:\n“{sentence}”"
+
+        n = _norm_prompt(prompt)
+        if n in used_norm_prompts:
+            continue
+
+        extra = {"mode": "short", "sentence": sentence, "pos": pos}
+        db.execute(
+            """INSERT INTO quiz_questions (quiz_id,qtype,prompt,correct,extra)
+               VALUES (?,?,?,?,?)""",
+            (quiz_id, "short", prompt, correct, json.dumps(extra))
+        )
+        used_norm_prompts.add(n)
+        return True
+
+    return False
+
+
+def add_long_question_unique(db, quiz_id: int, level: int, pos: int,
+                             used_norm_prompts: set, max_tries: int = 8) -> bool:
+    """
+    Generates a unique LONG item with 2–5 required words.
+    """
+    for _ in range(max_tries):
+        pool = WORD_POOLS[level]
+        required_count = {1: 2, 2: 3, 3: 3, 4: 4, 5: 5}[level]
+
+        picks = []
+        picks += random.sample(pool["nouns"], min(2, len(pool["nouns"])))
+        picks += random.sample(pool["verbs"], min(2, len(pool["verbs"])))
+        picks += random.sample(pool["adjectives"], min(2, len(pool["adjectives"])))
+        random.shuffle(picks)
+        required = picks[:required_count]
+
+        prompt = f"Write a single clear sentence using ALL of these words: {', '.join(required)}."
+        n = _norm_prompt(prompt)
+        if n in used_norm_prompts:
+            continue
+
+        extra = {"required_words": required, "pos": pos}
+        db.execute(
+            """INSERT INTO quiz_questions (quiz_id,qtype,prompt,correct,extra)
+               VALUES (?,?,?,?,?)""",
+            (quiz_id, "long", prompt, json.dumps(required), json.dumps(extra))
+        )
+        used_norm_prompts.add(n)
+        return True
+
+    return False
+
 
 # -------------------- Create 4×4 board --------------------
 def distribution_for_level(level: int):
@@ -724,66 +989,106 @@ def build_mock_catalog(n=1000):
 
 # Build once and reuse
 MOCK_CATALOG = build_mock_catalog()
-
 def create_board_quiz(username: str, level: int) -> int:
     db = get_db()
     cur = db.execute("INSERT INTO quizzes(username, level) VALUES(?, ?)", (username, level))
     quiz_id = cur.lastrowid
 
     mcq_need, short_need, long_need = distribution_for_level(level)
+
+    # Strictly use GPT output; no local fallbacks.
+    gpt = gpt_generate_quiz(level) or {}
+
+    gpt_mcq   = list(gpt.get("mcq",   []))
+    gpt_short = list(gpt.get("short", []))
+    # accept either 'long' (new) or 'sentence' (legacy) from GPT
+    gpt_long  = list(gpt.get("long", gpt.get("sentence", [])))
+
+    # Validate counts early so we never silently fill with local generators
+    if len(gpt_mcq)   < mcq_need:   raise RuntimeError(f"GPT returned {len(gpt_mcq)} MCQ, need {mcq_need}")
+    if len(gpt_short) < short_need: raise RuntimeError(f"GPT returned {len(gpt_short)} short, need {short_need}")
+    if len(gpt_long)  < long_need:  raise RuntimeError(f"GPT returned {len(gpt_long)} long, need {long_need}")
+
+    # fixed board positions 0..15 (your template places cells by extra_parsed.pos)
     positions = list(range(16))
     random.shuffle(positions)
 
-    gpt_data = gpt_generate_quiz(level) or {"mcq": [], "sentence": []}
-    gpt_mcq = list(gpt_data.get("mcq", []))
-    gpt_long = list(gpt_data.get("sentence", []))
+    used_norm_prompts = set()
 
+    # ---- MCQ ----
     for _ in range(mcq_need):
         pos = positions.pop()
-        if gpt_mcq:
-            item = gpt_mcq.pop(0)
-            prompt = str(item.get("prompt","")).strip()
-            options = item.get("options", [])
-            ai = item.get("answer_index", None)
-            if prompt and isinstance(options, list) and len(options) >= 4 and isinstance(ai, int) and 0 <= ai < 4:
-                choice_a, choice_b, choice_c, choice_d = options[:4]
-                correct_letter = "ABCD"[ai]
-                extra = {"mode":"gpt","pos":pos}
-                db.execute(
-                    """INSERT INTO quiz_questions
-                       (quiz_id,qtype,prompt,choice_a,choice_b,choice_c,choice_d,correct,extra)
-                       VALUES (?,?,?,?,?,?,?,?,?)""",
-                    (quiz_id,"mcq",prompt,choice_a,choice_b,choice_c,choice_d,correct_letter,json.dumps(extra))
-                )
-            else:
-                add_mcq_question(db, quiz_id, level, pos)
-        else:
-            add_mcq_question(db, quiz_id, level, pos)
+        item = gpt_mcq.pop(0)
+        prompt  = str(item.get("prompt", "")).strip()
+        options = item.get("options", [])
+        ai      = item.get("answer_index", None)
 
+        if not (prompt and isinstance(options, list) and len(options) >= 4 and isinstance(ai, int) and 0 <= ai < 4):
+            raise RuntimeError("Bad MCQ item from GPT")
+
+        n = _norm_prompt(prompt)
+        if n in used_norm_prompts:
+            raise RuntimeError("Duplicate MCQ prompt from GPT")
+
+        choice_a, choice_b, choice_c, choice_d = options[:4]
+        correct_letter = "ABCD"[ai]
+        extra = {"mode": "gpt", "pos": pos}
+
+        db.execute(
+            """INSERT INTO quiz_questions
+               (quiz_id,qtype,prompt,choice_a,choice_b,choice_c,choice_d,correct,extra)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (quiz_id, "mcq", prompt, choice_a, choice_b, choice_c, choice_d, correct_letter, json.dumps(extra))
+        )
+        used_norm_prompts.add(n)
+
+    # ---- SHORT ----
     for _ in range(short_need):
         pos = positions.pop()
-        add_short_question(db, quiz_id, level, pos)
+        item = gpt_short.pop(0)
+        prompt = str(item.get("prompt", "")).strip()
+        answer = str(item.get("answer", "")).strip()
 
+        if not (prompt and answer):
+            raise RuntimeError("Bad short item from GPT")
+
+        n = _norm_prompt(prompt)
+        if n in used_norm_prompts:
+            raise RuntimeError("Duplicate short prompt from GPT")
+
+        extra = {"mode": "gpt", "pos": pos}
+        db.execute(
+            """INSERT INTO quiz_questions (quiz_id,qtype,prompt,correct,extra)
+               VALUES (?,?,?,?,?)""",
+            (quiz_id, "short", prompt, answer, json.dumps(extra))
+        )
+        used_norm_prompts.add(n)
+
+    # ---- LONG ----
     for _ in range(long_need):
         pos = positions.pop()
-        if gpt_long:
-            item = gpt_long.pop(0)
-            req = item.get("required_words", [])
-            if isinstance(req, list) and req:
-                prompt = item.get("prompt") or f"Write a single clear sentence using ALL of these words: {', '.join(req)}."
-                extra = {"required_words": req, "pos": pos}
-                db.execute(
-                    """INSERT INTO quiz_questions (quiz_id,qtype,prompt,correct,extra)
-                       VALUES (?,?,?, ?, ?)""",
-                    (quiz_id,"long", str(prompt).strip(), json.dumps(req), json.dumps(extra))
-                )
-            else:
-                add_long_question(db, quiz_id, level, pos)
-        else:
-            add_long_question(db, quiz_id, level, pos)
+        item = gpt_long.pop(0)
+        req = item.get("required_words", [])
+        prompt = str(item.get("prompt") or (f"Write a single clear sentence using ALL of these words: {', '.join(req)}.")).strip()
+
+        if not (isinstance(req, list) and req and prompt):
+            raise RuntimeError("Bad long item from GPT")
+
+        n = _norm_prompt(prompt)
+        if n in used_norm_prompts:
+            raise RuntimeError("Duplicate long prompt from GPT")
+
+        extra = {"required_words": req, "pos": pos}
+        db.execute(
+            """INSERT INTO quiz_questions (quiz_id,qtype,prompt,correct,extra)
+               VALUES (?,?,?,?,?)""",
+            (quiz_id, "long", prompt, json.dumps(req), json.dumps(extra))
+        )
+        used_norm_prompts.add(n)
 
     db.commit()
     return quiz_id
+
 
 # -------------------- Auth --------------------
 @app.route("/login", methods=["GET", "POST"])
@@ -1069,6 +1374,48 @@ def ensure_story_record(slug:str, meta:dict):
     ))
     db.commit()
     return db.execute("SELECT id FROM stories WHERE slug=?", (slug,)).fetchone()["id"]
+import json
+
+def _fetch_ready_stories(db, limit=3):
+    """
+    Returns up to `limit` already-generated stories (content != '') as a list of dicts.
+    Randomly selects stories from those available.
+    """
+    # 1) Confirm table and available columns
+    cols = {r["name"] for r in db.execute("PRAGMA table_info(stories)").fetchall()}
+
+    # 2) Run the query with RANDOM() ordering
+    rows = db.execute(
+        """
+        SELECT slug, title, author, categories, themes
+        FROM stories
+        WHERE COALESCE(NULLIF(content,''), '') <> ''
+        ORDER BY RANDOM()
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+    # 3) Helper to safely parse JSON list strings
+    def _safe_list(s):
+        try:
+            v = json.loads(s or "[]")
+            return v if isinstance(v, list) else []
+        except Exception:
+            return []
+
+    # 4) Build formatted output for the template
+    out = []
+    for r in rows:
+        out.append({
+            "slug": r["slug"],
+            "title": r["title"],
+            "author": r["author"] or "Unknown",
+            "categories": _safe_list(r["categories"]),
+            "themes": _safe_list(r["themes"]),
+            "cover": None,  # your template already handles missing cover
+        })
+    return out
 
 @app.route("/profile")
 def profile():
@@ -1093,25 +1440,53 @@ def profile():
     earned_titles = []
     for code in earned_codes:
         t = TITLES.get(code)
-        if t and t.get("title"): earned_titles.append((t["priority"], t["title"]))
+        if t and t.get("title"):
+            earned_titles.append((t["priority"], t["title"]))
     earned_titles = [t for _, t in sorted(set(earned_titles), key=lambda x: x[0])]
 
     # recent quiz history
-    attempts = db.execute("""
+    attempts = db.execute(
+        """
         SELECT level, score, total, lines_completed, created_at
         FROM attempts
         WHERE username=?
         ORDER BY created_at DESC
         LIMIT 12
-    """, (username,)).fetchall()
+        """,
+        (username,),
+    ).fetchall()
 
-    # vocab notebook (latest)
-    vocab_rows = db.execute("""
-        SELECT word, translation, definition, created_at
-        FROM vocab WHERE username=?
+    # vocab notebook (bookmarked latest)
+    vocab_rows = db.execute(
+        """
+        SELECT word, translation, definition, created_at, bookmarked
+        FROM vocab
+        WHERE username=? AND bookmarked=1
         ORDER BY created_at DESC
         LIMIT 30
-    """, (username,)).fetchall()
+        """,
+        (username,),
+    ).fetchall()
+
+    # ——— NEW: pick exactly 3 "ready" stories or fallback to a few recommendations ———
+    ready_items = _fetch_ready_stories(db, limit=3)
+    if not ready_items:
+        # fallback: grab 3 suggestions (no "Ready" badge in your template for these)
+        fallback = recommend_stories(limit=3) or []
+        for s in fallback:
+            try:
+                ensure_story_record(s["slug"], s)  # keep meta synced; content may still be empty
+            except Exception:
+                pass
+        # normalize keys the template expects
+        ready_items = [{
+            "slug": s.get("slug"),
+            "title": s.get("title"),
+            "author": s.get("author") or "Unknown",
+            "categories": s.get("categories") or [],
+            "themes": s.get("themes") or [],
+            "cover": s.get("cover"),
+        } for s in fallback]
 
     return render_template(
         "profile.html",
@@ -1124,14 +1499,63 @@ def profile():
         achievements_earned=earned_ach,
         earned_titles=[t for t in earned_titles],
         attempts=attempts,
-        vocab_rows=vocab_rows
+        vocab_rows=vocab_rows,
+        ready_items=ready_items,  # <— pass to your template
     )
+
+# app.py
+
 @app.get("/api/define")
 def api_define():
     word = (request.args.get("word") or "").strip()
-    if not word: return {"error":"missing word"}, 400
+    if not word:
+        return {"error": "missing word"}, 400
+
+    # dictionary lookup
     ko, defin = dict_lookup_en_ko(word)
-    return {"word": word, "ko": ko, "definition": defin}
+
+    bookmarked = None  # default when not logged in
+    if "username" in session:
+        db = get_db()
+        username = session["username"]
+        w = word.lower()
+
+        # upsert a vocab row so we can track bookmark state reliably
+        row = db.execute(
+            "SELECT word, bookmarked FROM vocab WHERE username=? AND word=? ORDER BY created_at DESC LIMIT 1",
+            (username, w),
+        ).fetchone()
+
+        if not row:
+            db.execute(
+                """
+                INSERT INTO vocab(username, word, translation, definition, source_story_id, bookmarked)
+                VALUES(?,?,?,?,?,?)
+                """,
+                (username, w, ko or "", defin or "", None, 0),
+            )
+        else:
+            # keep definition/translation fresh for this user
+            db.execute(
+                "UPDATE vocab SET translation=?, definition=? WHERE username=? AND word=?",
+                (ko or "", defin or "", username, w),
+            )
+
+        db.commit()
+
+        # fetch the current bookmark state after upsert/update
+        row2 = db.execute(
+            "SELECT bookmarked FROM vocab WHERE username=? AND word=? ORDER BY created_at DESC LIMIT 1",
+            (username, w),
+        ).fetchone()
+        bookmarked = bool(row2["bookmarked"]) if row2 else False
+
+    # include 'bookmarked' only when we know the user
+    payload = {"word": word, "ko": ko, "definition": defin}
+    if bookmarked is not None:
+        payload["bookmarked"] = bookmarked
+    return payload
+
 @app.get("/story/<slug>")
 def read_story(slug):
     if "username" not in session:
@@ -1398,22 +1822,49 @@ def start_quiz(level):
         flash("That level is locked. Clear your current level first.", "warning")
         return redirect(url_for("home"))
 
-    quiz_id = create_board_quiz(username, level)
+    # NEW: respect `?new=1`
+    force_new = (request.args.get("new") == "1")
+
+    quiz_id = None
+    if not force_new:
+        # Try to reuse an unfinished quiz
+        unfinished = db.execute("""
+            SELECT q.id AS quiz_id
+            FROM quizzes q
+            LEFT JOIN (
+              SELECT quiz_id, COUNT(*) AS answered
+              FROM quiz_answers
+              GROUP BY quiz_id
+            ) a ON a.quiz_id = q.id
+            WHERE q.username=? AND q.level=?
+            ORDER BY q.created_at DESC
+        """, (username, level)).fetchall()
+
+        for r in unfinished:
+            total_q = db.execute(
+                "SELECT COUNT(*) AS c FROM quiz_questions WHERE quiz_id=?",
+                (r["quiz_id"],)
+            ).fetchone()["c"]
+            answered = db.execute(
+                "SELECT COUNT(*) AS c FROM quiz_answers WHERE quiz_id=?",
+                (r["quiz_id"],)
+            ).fetchone()["c"]
+            if total_q == 16 and answered < 16:
+                quiz_id = r["quiz_id"]
+                break
+
+    # If forcing new OR nothing reusable found, create a new board
+    if not quiz_id:
+        quiz_id = create_board_quiz(username, level)
 
     rows = db.execute("SELECT * FROM quiz_questions WHERE quiz_id = ?", (quiz_id,)).fetchall()
     qs = []
     for r in rows:
         d = dict(r)
-        if d.get("extra"):
-            try:
-                d["extra_parsed"] = json.loads(d["extra"])
-            except Exception:
-                d["extra_parsed"] = {}
-        else:
-            d["extra_parsed"] = {}
+        d["extra_parsed"] = json.loads(d["extra"]) if d.get("extra") else {}
         qs.append(d)
 
-    # Ensure exactly 16 cells
+    # Ensure exactly 16 (safety net)
     if len(qs) < 16:
         needed = 16 - len(qs)
         positions_taken = {q.get("extra_parsed",{}).get("pos") for q in qs if q.get("extra_parsed")}
@@ -1430,6 +1881,133 @@ def start_quiz(level):
             qs.append(d)
 
     return render_template("quiz.html", level=level, quiz_id=quiz_id, qs=qs)
+
+def _quiz_state(db, quiz_id: int):
+    # Pull answers
+    answers = db.execute("""
+        SELECT qq.id AS qid, qq.qtype, qq.extra, a.is_correct
+        FROM quiz_questions qq
+        LEFT JOIN quiz_answers a ON a.question_id=qq.id AND a.quiz_id=qq.quiz_id
+        WHERE qq.quiz_id=?
+        ORDER BY qq.id
+    """, (quiz_id,)).fetchall()
+
+    answered = set()
+    correct = set()
+    pos_correct = set()
+    wrong = 0
+
+    for r in answers:
+        ex = json.loads(r["extra"] or "{}")
+        pos = ex.get("pos")
+        if r["is_correct"] is not None:
+            answered.add(pos)
+            if int(r["is_correct"]) == 1:
+                correct.add(pos)
+                if pos is not None:
+                    pos_correct.add(pos)
+            else:
+                wrong += 1
+
+    # lives: 3 base minus wrong
+    lives = max(0, 3 - wrong)
+
+    # lines
+    def _lines_from_positions(pos_set):
+        lines = []
+        for rr in range(4): lines.append({4*rr + c for c in range(4)})
+        for cc in range(4): lines.append({4*r + cc for r in range(4)})
+        lines.append({0,5,10,15})
+        lines.append({3,6,9,12})
+        cnt = 0
+        awarded_idx = []
+        for i, L in enumerate(lines):
+            if L.issubset(pos_set):
+                cnt += 1
+                awarded_idx.append(i)
+        return cnt, awarded_idx
+
+    line_cnt, awarded_idx = _lines_from_positions(pos_correct)
+
+    # xp: 10 per correct + 20 per line
+    xp = (len(correct) * 10) + (line_cnt * 20)
+
+    return {
+        "answered": sorted([p for p in answered if p is not None]),
+        "correct": sorted([p for p in correct if p is not None]),
+        "lives": lives,
+        "lines": line_cnt,
+        "xp": xp
+    }
+
+@app.get("/api/quiz/state/<int:quiz_id>")
+def api_quiz_state(quiz_id):
+    if "username" not in session:
+        return {"error":"auth"}, 401
+    db = get_db()
+    # Ensure this quiz belongs to the user
+    owner = db.execute("SELECT username FROM quizzes WHERE id=?", (quiz_id,)).fetchone()
+    if not owner or owner["username"] != session["username"]:
+        return {"error":"not-found"}, 404
+    return _quiz_state(db, quiz_id)
+
+@app.post("/api/quiz/answer")
+def api_quiz_answer():
+    if "username" not in session:
+        return {"error":"auth"}, 401
+    data = request.get_json(silent=True) or {}
+    quiz_id = int(data.get("quiz_id") or 0)
+    question_id = int(data.get("question_id") or 0)
+    response_text = (data.get("response") or "").strip()
+
+    db = get_db()
+    row = db.execute("SELECT username FROM quizzes WHERE id=?", (quiz_id,)).fetchone()
+    if not row or row["username"] != session["username"]:
+        return {"error":"not-found"}, 404
+
+    q = db.execute("SELECT * FROM quiz_questions WHERE id=? AND quiz_id=?", (question_id, quiz_id)).fetchone()
+    if not q:
+        return {"error":"question-not-found"}, 404
+
+    # If already answered, return current state
+    existing = db.execute("SELECT * FROM quiz_answers WHERE quiz_id=? AND question_id=?", (quiz_id, question_id)).fetchone()
+    if existing:
+        state = _quiz_state(db, quiz_id)
+        state["already_answered"] = True
+        return state
+
+    qtype = q["qtype"]
+    is_correct = 0
+    awarded_xp = 0
+
+    if qtype == "mcq":
+        user_ans = response_text.upper()
+        correct_letter = (q["correct"] or "").upper()
+        is_correct = 1 if user_ans == correct_letter else 0
+        awarded_xp = 10 if is_correct else 0
+
+    elif qtype == "short":
+        user_ans = response_text.lower()
+        correct_text = (q["correct"] or "").strip().lower()
+        is_correct = 1 if (user_ans and user_ans == correct_text) else 0
+        awarded_xp = 10 if is_correct else 0
+
+    else:  # long
+        required = set(json.loads(q["correct"] or "[]"))
+        sentence = response_text
+        low = sentence.lower()
+        hits = sum(1 for w in required if w.lower() in low)
+        is_correct = 1 if hits == len(required) and len(sentence.split()) >= max(6, len(required) + 2) else 0
+        awarded_xp = 15 if is_correct else int(round(15 * (hits / max(1, len(required)))))
+
+    # Store answer (unique per uq_quiz_answers)
+    db.execute("""
+        INSERT INTO quiz_answers(quiz_id, question_id, response, is_correct, awarded_xp)
+        VALUES (?,?,?,?,?)
+    """, (quiz_id, question_id, response_text, is_correct, awarded_xp))
+    db.commit()
+
+    return _quiz_state(db, quiz_id)
 
 @app.route("/submit/quiz/<int:quiz_id>", methods=["POST"])
 def submit_quiz_instance(quiz_id):
@@ -1613,6 +2191,55 @@ def achievements():
         earned_codes=earned_codes,
         earned_titles=earned_titles,
     )
+
+@app.post("/api/vocab/bookmark")
+def api_vocab_bookmark():
+    if "username" not in session:
+        return {"error": "auth"}, 401
+    data = request.get_json(silent=True) or {}
+    word = (data.get("word") or "").strip().lower()
+    toggle = bool(data.get("toggle"))
+    set_to = data.get("bookmarked")  # optional explicit state
+
+    if not word:
+        return {"error": "missing-word"}, 400
+
+    db = get_db()
+    username = session["username"]
+
+    # Ensure the vocab row exists (reading usually created it, but be safe)
+    row = db.execute(
+        "SELECT word, bookmarked FROM vocab WHERE username=? AND word=? ORDER BY created_at DESC LIMIT 1",
+        (username, word)
+    ).fetchone()
+    if not row:
+        # create a placeholder entry so user can bookmark manually
+        try:
+            db.execute("""
+              INSERT OR IGNORE INTO vocab(username, word, translation, definition, source_story_id, bookmarked)
+              VALUES(?,?,?,?,?,?)
+            """, (username, word, "", "", None, 0))
+            db.commit()
+            row = db.execute(
+                "SELECT word, bookmarked FROM vocab WHERE username=? AND word=? ORDER BY created_at DESC LIMIT 1",
+                (username, word)
+            ).fetchone()
+        except Exception:
+            pass
+
+    current = int(row["bookmarked"]) if row else 0
+    if toggle:
+        new_state = 0 if current else 1
+    else:
+        new_state = 1 if str(set_to).lower() in ("1","true","yes","on") else 0
+
+    db.execute(
+        "UPDATE vocab SET bookmarked=? WHERE username=? AND word=?",
+        (new_state, username, word)
+    )
+    db.commit()
+
+    return {"ok": True, "word": word, "bookmarked": int(new_state) == 1}
 
 # -------------------- Utilities --------------------
 @app.route("/initdb")
