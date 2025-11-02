@@ -16,7 +16,6 @@ from flask import (
 )
 
 # ====== GPT client (optional; graceful fallback) ======
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 try:
@@ -1417,6 +1416,7 @@ def _fetch_ready_stories(db, limit=3):
         })
     return out
 
+
 @app.route("/profile")
 def profile():
     if "username" not in session:
@@ -1950,64 +1950,107 @@ def api_quiz_state(quiz_id):
     if not owner or owner["username"] != session["username"]:
         return {"error":"not-found"}, 404
     return _quiz_state(db, quiz_id)
-
 @app.post("/api/quiz/answer")
 def api_quiz_answer():
     if "username" not in session:
         return {"error":"auth"}, 401
+
     data = request.get_json(silent=True) or {}
-    quiz_id = int(data.get("quiz_id") or 0)
-    question_id = int(data.get("question_id") or 0)
+    try:
+        quiz_id = int(data.get("quiz_id") or 0)
+        question_id = int(data.get("question_id") or 0)
+    except Exception:
+        return {"error":"bad-request"}, 400
     response_text = (data.get("response") or "").strip()
 
     db = get_db()
-    row = db.execute("SELECT username FROM quizzes WHERE id=?", (quiz_id,)).fetchone()
-    if not row or row["username"] != session["username"]:
+
+    # Ensure this quiz belongs to the logged-in user
+    owner = db.execute("SELECT username FROM quizzes WHERE id=?", (quiz_id,)).fetchone()
+    if not owner or owner["username"] != session["username"]:
         return {"error":"not-found"}, 404
 
-    q = db.execute("SELECT * FROM quiz_questions WHERE id=? AND quiz_id=?", (question_id, quiz_id)).fetchone()
+    # --- HARD STOP WHEN OUT OF LIVES (pre-check) ---
+    state_before = _quiz_state(db, quiz_id)
+    if state_before["lives"] <= 0:
+        frozen = dict(state_before)
+        frozen["game_over"] = True
+        return frozen, 409  # Conflict: game is already over
+
+    # Pull question
+    q = db.execute(
+        "SELECT * FROM quiz_questions WHERE id=? AND quiz_id=?",
+        (question_id, quiz_id)
+    ).fetchone()
     if not q:
         return {"error":"question-not-found"}, 404
 
     # If already answered, return current state
-    existing = db.execute("SELECT * FROM quiz_answers WHERE quiz_id=? AND question_id=?", (quiz_id, question_id)).fetchone()
+    existing = db.execute(
+        "SELECT * FROM quiz_answers WHERE quiz_id=? AND question_id=?",
+        (quiz_id, question_id)
+    ).fetchone()
     if existing:
         state = _quiz_state(db, quiz_id)
         state["already_answered"] = True
         return state
 
+    # --- HARD STOP WHEN OUT OF LIVES (race-check) ---
+    state_mid = _quiz_state(db, quiz_id)
+    if state_mid["lives"] <= 0:
+        frozen = dict(state_mid)
+        frozen["game_over"] = True
+        return frozen, 409
+
+    # Grade and insert
     qtype = q["qtype"]
     is_correct = 0
     awarded_xp = 0
 
     if qtype == "mcq":
+        # MCQ expects a letter A-D
         user_ans = response_text.upper()
         correct_letter = (q["correct"] or "").upper()
         is_correct = 1 if user_ans == correct_letter else 0
         awarded_xp = 10 if is_correct else 0
 
     elif qtype == "short":
+        # SHORT expects an exact one-word match
         user_ans = response_text.lower()
         correct_text = (q["correct"] or "").strip().lower()
         is_correct = 1 if (user_ans and user_ans == correct_text) else 0
         awarded_xp = 10 if is_correct else 0
 
-    else:  # long
-        required = set(json.loads(q["correct"] or "[]"))
+    else:  # "long"
+        # LONG expects all required words to be present (case-insensitive) and a minimal length
+        try:
+            required = set(json.loads(q["correct"] or "[]"))
+        except Exception:
+            required = set()
         sentence = response_text
         low = sentence.lower()
         hits = sum(1 for w in required if w.lower() in low)
         is_correct = 1 if hits == len(required) and len(sentence.split()) >= max(6, len(required) + 2) else 0
         awarded_xp = 15 if is_correct else int(round(15 * (hits / max(1, len(required)))))
 
-    # Store answer (unique per uq_quiz_answers)
-    db.execute("""
+    # Store the answer
+    db.execute(
+        """
         INSERT INTO quiz_answers(quiz_id, question_id, response, is_correct, awarded_xp)
         VALUES (?,?,?,?,?)
-    """, (quiz_id, question_id, response_text, is_correct, awarded_xp))
+        """,
+        (quiz_id, question_id, response_text, is_correct, awarded_xp)
+    )
     db.commit()
 
-    return _quiz_state(db, quiz_id)
+    # Return fresh state (this will reflect new lives if the answer was wrong)
+    state_after = _quiz_state(db, quiz_id)
+    if state_after["lives"] <= 0:
+        state_after["game_over"] = True
+        # 200 is okay too; keeping 200 so client can always parse normally
+        return state_after, 200
+
+    return state_after
 
 @app.route("/submit/quiz/<int:quiz_id>", methods=["POST"])
 def submit_quiz_instance(quiz_id):

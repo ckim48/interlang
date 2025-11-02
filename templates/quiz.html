@@ -242,16 +242,40 @@ body{
           <i class="bi bi-lock-fill me-1"></i> This cell is locked (already checked).
         </div>
       </div>
-<div class="modal-footer">
-  <button class="btn btn-ghost" id="modalClearBtn" type="button">
-    <i class="bi bi-eraser"></i> Clear
-  </button>
-  <button class="btn btn-gradient" id="modalCheckBtn" type="button">Check</button>
-  <button class="btn btn-ghost" id="modalCloseBtn" type="button" data-bs-dismiss="modal" style="display:none">
-    <i class="bi bi-x-circle me-2"></i> Close
-  </button>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="modalClearBtn" type="button">
+          <i class="bi bi-eraser"></i> Clear
+        </button>
+        <button class="btn btn-gradient" id="modalCheckBtn" type="button">Check</button>
+        <button class="btn btn-ghost" id="modalCloseBtn" type="button" data-bs-dismiss="modal" style="display:none">
+          <i class="bi bi-x-circle me-2"></i> Close
+        </button>
+      </div>
+    </div>
+  </div>
 </div>
 
+<!-- Game Over Modal -->
+<div class="modal fade" id="overModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-md modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header align-items-center">
+        <h5 class="modal-title">
+          <i class="bi bi-emoji-frown me-2"></i> Out of lives
+        </h5>
+        <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-0 text-secondary" id="overStats"></p>
+      </div>
+      <div class="modal-footer">
+        <a class="btn btn-ghost" href="{{ url_for('home') }}">
+          <i class="bi bi-house-door"></i> Home
+        </a>
+        <button class="btn btn-gradient" id="overRetryBtn" type="button">
+          <i class="bi bi-arrow-repeat me-1"></i> Try again
+        </button>
+      </div>
     </div>
   </div>
 </div>
@@ -341,6 +365,12 @@ const modalClearBtn = document.getElementById('modalClearBtn');
 const modalCheckBtn = document.getElementById('modalCheckBtn');
 const modalCloseBtn = document.getElementById('modalCloseBtn');
 
+/* Game Over modal refs */
+const overModalEl  = document.getElementById('overModal');
+const overModal    = new bootstrap.Modal(overModalEl, { backdrop:'static', keyboard:false });
+const overStats    = document.getElementById('overStats');
+const overRetryBtn = document.getElementById('overRetryBtn');
+
 /* ========= Helpers ========= */
 function typeMeta(t){
   if (t==='mcq')   return {label:'MCQ', title:'Multiple Choice', icon:'bi-check2-square', badge:'badge-mcq'};
@@ -362,6 +392,23 @@ function containsWord(text, word){
 function formatPrompt(s){ return escapeHtml(s||'').replace(/\n/g,'<br>'); }
 function escapeHtml(s){ return String(s??'').replace(/[&<>"']/g,(m)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
 function normalize(s){ return String(s||'').trim().toLowerCase(); }
+
+/* Reset the board for retry */
+function resetBoard(){
+  lives = 3; xp = 0; lines = 0;
+  selectedPos = null;
+  answered = new Set();
+  correct = new Set();
+  awardedLines = new Set();
+  finishCard.style.display = 'none';
+  renderBoard();
+  updateHUD();
+  clearState();
+}
+overRetryBtn.addEventListener('click', ()=>{
+  overModal.hide();
+  resetBoard();
+});
 
 /* ========= Render Board ========= */
 function renderBoard(){
@@ -457,7 +504,6 @@ function openModalFor(pos){
       if (isAnswered) b.disabled = true;
       modalMCQ.appendChild(b);
     });
-
 
     if (isAnswered){
       const corrIx = ['A','B','C','D'].indexOf(String(q.correct||'').toUpperCase());
@@ -568,8 +614,8 @@ function onModalCheck(){
     modalFeedback.insertAdjacentHTML('afterbegin', `<div class="alert alert-danger mb-2">Wrong. -1 life</div>`);
     setFooter('locked');  // swap to Close, keep modal open
     if (lives <= 0){
-      endBoard("Out of lives!");   // show finish card
-      return;                      // don't hide the modal; user will press Close
+      endBoard("Out of lives!");   // show Game Over popup
+      return;
     }
   }
 
@@ -583,7 +629,6 @@ function onModalCheck(){
     setFooter('solved'); // keep Close visible
   }
 }
-
 
 /* ========= Lines / Confetti ========= */
 function awardLinesIfAny(){
@@ -628,11 +673,26 @@ function updateHUD(){
   }
 }
 
+/* Modified endBoard to use popup when out of lives */
 function endBoard(reason){
+  // Popup flow for out-of-lives
+  if (reason && reason.toLowerCase().startsWith('out of lives')) {
+    // Lock the board
+    [...document.querySelectorAll('.cell')].forEach(c=> c.classList.add('locked'));
+    // Close question modal if open
+    try { qModal.hide(); } catch(e){}
+    // Fill stats + show popup
+    overStats.textContent = `Solved: ${correct.size}/${TOTAL} • Lines: ${lines} • XP: ${xp}`;
+    overModal.show();
+    clearState();
+    return;
+  }
+
+  // Default finish card for other reasons (e.g., board complete)
   finishCard.style.display='block';
   finishTitle.textContent = reason || "Board complete!";
   finishStats.textContent = `Solved: ${correct.size}/${TOTAL} • Lines: ${lines} • XP: ${xp}`;
-  clearState(); // board finished; discard saved progress
+  clearState();
 }
 
 /* ========= Toast + Confetti ========= */
@@ -645,7 +705,6 @@ function showResumeToast(){
   resumeToast.style.display='block';
   setTimeout(()=> resumeToast.style.display='none', 1400);
 }
-
 function shootConfetti(n=30){
   const colors = ['#60a5fa','#a78bfa','#f59e0b','#22c55e','#e879f9','#38bdf8'];
   for (let i=0;i<n;i++){
@@ -670,7 +729,8 @@ function shootConfetti(n=30){
     setTimeout(()=> p.remove(), fall);
   }
 }
-// ===== Footer state helper =====
+
+/* ===== Footer state helper ===== */
 function setFooter(mode){
   // mode: 'default' | 'locked' | 'solved'
   if (mode === 'solved'){
