@@ -21,7 +21,7 @@
   --navy-900:#0b1220; --navy-800:#0e1730;
   --glass: rgba(19,27,46,.72);
 
-  /* “point color” confetti dots etc. */
+  /* confetti colors */
   --point1:#60a5fa; --point2:#a78bfa; --point3:#f59e0b; --point4:#22c55e; --point5:#38bdf8; --point6:#e879f9;
 }
 
@@ -37,7 +37,7 @@ body{
   background-attachment: fixed;
 }
 
-/* ======= LIGHT COMPONENTS (copied from Profile theme) ======= */
+/* LIGHT COMPONENTS */
 .pill{
   background:linear-gradient(180deg,#fff,#f3f7ff);
   color:#223357; border:1px solid #e6ecff; font-weight:800;
@@ -68,7 +68,7 @@ body{
   padding:.65rem .9rem; border-radius:12px; box-shadow:0 8px 24px rgba(13,31,64,.10); z-index:9999; display:none; color:#0b3b22;
 }
 
-/* ======= DARK BOARD AREA (kept for drama) ======= */
+/* DARK BOARD AREA */
 .board-wrap{
   background: linear-gradient(180deg, rgba(20,26,44,.96), rgba(12,19,38,.98));
   border:1px solid rgba(255,255,255,.08); color:#e6eeff; border-radius:18px;
@@ -76,7 +76,6 @@ body{
 }
 .board{ display:grid; grid-template-columns:repeat(4, 1fr); gap:.9rem; }
 
-/* Cells */
 .cell{
   position:relative; min-height:140px; border-radius:18px; cursor:pointer; overflow:hidden;
   background:
@@ -107,7 +106,6 @@ body{
 .cell.flipped .inner{ transform: rotateY(180deg); }
 .face{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:1rem; backface-visibility:hidden; }
 
-/* Front */
 .face.front{ text-align:center; color:#dbe6ff; }
 .type-emblem{
   display:inline-flex; align-items:center; gap:.75rem; padding:.65rem .9rem;
@@ -120,10 +118,8 @@ body{
 .em-long{ background:linear-gradient(135deg, #fef3c7, #fff2d7); color:#3f2504; }
 .front-cta{ margin-top:.55rem; color:#cbd5e1; font-weight:600; opacity:.95; letter-spacing:.2px; font-size:.9rem; }
 
-/* Back */
 .face.back{ transform: rotateY(180deg); color:#dfe8ff; font-weight:700; font-size:1.1rem; }
 
-/* result chip */
 .cell .badge-done{
   position:absolute; bottom:.55rem; right:.55rem;
   background:rgba(255,255,255,.09); border:1px solid rgba(255,255,255,.15);
@@ -160,13 +156,10 @@ body{
 }
 .quiz-input:focus{ border-color:#cfe2ff; box-shadow:0 0 0 .25rem var(--ring) }
 
-/* HUD helper text */
 .dim{ color:var(--muted) }
 
-/* Confetti */
 .confetti{ position:fixed; top:-10px; left:0; width:8px; height:12px; border-radius:2px; z-index:9999 }
 
-/* Resume toast */
 .resume-toast{
   position:fixed; left:50%; transform:translateX(-50%);
   bottom:1rem; background:#eef7ff; color:#0e1b35;
@@ -419,7 +412,7 @@ function renderBoard(){
     cell.className = 'cell';
     cell.dataset.pos = i;
 
-    if (!q){ // safety if any slot missing
+    if (!q){
       cell.innerHTML = `<div class="inner"><div class="face front">
         <div class="text-center text-secondary">Loading…</div>
       </div></div>`;
@@ -453,7 +446,13 @@ function renderBoard(){
       cell.insertAdjacentHTML('beforeend','<span class="badge-done">✗</span>');
     }
 
+    /* NEW: hard stop when out of lives */
+    if (lives <= 0) {
+      cell.classList.add('locked');
+    }
+
     cell.addEventListener('click', ()=>{
+      if (lives <= 0) return;  // NEW: block interaction entirely
       if (answered.has(i) || finishCard.style.display !== 'none') return;
       selectedPos = i;
       cell.classList.add('flipped');
@@ -472,6 +471,7 @@ function hideAllModalBlocks(){
 }
 
 function openModalFor(pos){
+  if (lives <= 0) return; // NEW: never open modal if no lives
   const q = QUESTIONS[pos]; if (!q) return;
 
   const m = typeMeta(q.qtype);
@@ -563,6 +563,7 @@ document.getElementById('modalCheckBtn').addEventListener('click', onModalCheck)
 
 // ===== Check handler (shows result, never auto-closes the modal) =====
 function onModalCheck(){
+  if (lives <= 0) return;   // NEW: block checking when no lives
   if (selectedPos===null) return;
   const q = QUESTIONS[selectedPos];
   if (!q || answered.has(selectedPos)) return;
@@ -623,10 +624,9 @@ function onModalCheck(){
   renderBoard();
   saveState();
 
-  // If board is done, show finish card but DO NOT hide the modal automatically.
   if (answered.size === TOTAL || correct.size === TOTAL){
     endBoard("Board completed!");
-    setFooter('solved'); // keep Close visible
+    setFooter('solved');
   }
 }
 
@@ -675,20 +675,14 @@ function updateHUD(){
 
 /* Modified endBoard to use popup when out of lives */
 function endBoard(reason){
-  // Popup flow for out-of-lives
   if (reason && reason.toLowerCase().startsWith('out of lives')) {
-    // Lock the board
-    [...document.querySelectorAll('.cell')].forEach(c=> c.classList.add('locked'));
-    // Close question modal if open
+    [...document.querySelectorAll('.cell')].forEach(c=> c.classList.add('locked')); // keep locked
     try { qModal.hide(); } catch(e){}
-    // Fill stats + show popup
     overStats.textContent = `Solved: ${correct.size}/${TOTAL} • Lines: ${lines} • XP: ${xp}`;
     overModal.show();
     clearState();
     return;
   }
-
-  // Default finish card for other reasons (e.g., board complete)
   finishCard.style.display='block';
   finishTitle.textContent = reason || "Board complete!";
   finishStats.textContent = `Solved: ${correct.size}/${TOTAL} • Lines: ${lines} • XP: ${xp}`;
@@ -732,8 +726,7 @@ function shootConfetti(n=30){
 
 /* ===== Footer state helper ===== */
 function setFooter(mode){
-  // mode: 'default' | 'locked' | 'solved'
-  if (mode === 'solved'){
+  if (mode === 'solved' || mode === 'locked'){
     modalClearBtn.style.display = 'none';
     modalCheckBtn.style.display = 'none';
     modalCloseBtn.style.display = 'inline-flex';
@@ -741,15 +734,6 @@ function setFooter(mode){
     modalCheckBtn.disabled = true;
     return;
   }
-  if (mode === 'locked'){ // already answered (wrong or solved)
-    modalClearBtn.style.display = 'none';
-    modalCheckBtn.style.display = 'none';
-    modalCloseBtn.style.display = 'inline-flex';
-    modalClearBtn.disabled = true;
-    modalCheckBtn.disabled = true;
-    return;
-  }
-  // default (fresh question)
   modalClearBtn.style.display = 'inline-flex';
   modalCheckBtn.style.display = 'inline-flex';
   modalCloseBtn.style.display = 'none';
@@ -760,6 +744,15 @@ function setFooter(mode){
 /* ========= Start ========= */
 (function init(){
   const hadState = loadState();
+
+  // NEW: if we restored to a dead board, lock & show Game Over immediately
+  if (lives <= 0) {
+    renderBoard();
+    updateHUD();
+    endBoard("Out of lives!");
+    return;
+  }
+
   renderBoard();
   updateHUD();
   if (hadState && (answered.size>0 || correct.size>0)) showResumeToast();
