@@ -1,4 +1,4 @@
-{# templates/nav.html (light ultra-light navbar) #}
+{# templates/nav.html #}
 <link rel="icon" href="{{ url_for('static', filename='img/favicon-32.png') }}" sizes="32x32">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" sizes="180x180">
 
@@ -10,7 +10,6 @@
    border-bottom:1px solid #e6ecff;
    box-shadow:0 2px 6px rgba(13,31,64,.04);
   }
-
   .et-brand{
    font-weight:800;letter-spacing:.2px;text-decoration:none;
    color:#0e1b35!important;
@@ -19,7 +18,6 @@
   .et-brand .mark{
    width:.55rem;height:.55rem;border-radius:999px;background:#0e1b35;
   }
-
   .navbar-nav .nav-link{
    font-weight:700;color:#2f3b57;
    border-radius:8px;
@@ -48,6 +46,7 @@
  {% set stories_active = ep in ('stories','read_story') %}
  {% set profile_active = ep == 'profile' %}
  {% set ach_active = ep == 'achievements' %}
+ {% set admin_active = ep == 'admin_analytics' %}
 
  <div class="container d-flex align-items-center justify-content-between" style="min-height:56px">
   <a class="et-brand navbar-brand" href="{{ url_for('index') }}">
@@ -60,21 +59,34 @@
 
   <div class="collapse navbar-collapse justify-content-end" id="navMenu">
    <ul class="navbar-nav">
+
     <li class="nav-item">
      <a class="nav-link {% if boards_active %}active{% endif %}" href="{{ url_for('home') }}">
       Boards
      </a>
     </li>
+
     <li class="nav-item">
      <a class="nav-link {% if stories_active %}active{% endif %}" href="{{ url_for('stories') }}">
       Stories
      </a>
     </li>
+
     <li class="nav-item">
      <a class="nav-link {% if ach_active %}active{% endif %}" href="{{ url_for('achievements') }}">
       Achievements
      </a>
     </li>
+
+    {#  ADMIN SECTION — only visible if username == testtest #}
+    {% if session.get('username') == 'testtest' %}
+    <li class="nav-item">
+     <a class="nav-link {% if admin_active %}active{% endif %}"
+        href="{{ url_for('admin_analytics') }}">
+      Admin
+     </a>
+    </li>
+    {% endif %}
 
     {% if session.get('username') %}
      <li class="nav-item">
@@ -83,15 +95,11 @@
       </a>
      </li>
      <li class="nav-item">
-      <a class="nav-link" href="{{ url_for('logout') }}">
-       Logout
-      </a>
+      <a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
      </li>
     {% else %}
      <li class="nav-item">
-      <a class="nav-link" href="{{ url_for('login') }}">
-       Login
-      </a>
+      <a class="nav-link" href="{{ url_for('login') }}">Login</a>
      </li>
     {% endif %}
    </ul>

@@ -1,0 +1,283 @@
+<!-- templates/admin_analytics.html -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Admin • Analytics</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+<style>
+:root{
+  --ink:#0e1b35; --muted:#4b5567; --bg:#ffffff;
+}
+body{
+  color:var(--ink); background:var(--bg);
+  font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  background-image:
+    radial-gradient(36vmax 36vmax at 12% 6%, #eef4ff 0%, transparent 70%),
+    radial-gradient(32vmax 32vmax at 88% 0%, transparent 70%),
+    radial-gradient(30vmax 30vmax at 10% 90%, #f7faff 0%, transparent 70%);
+  background-attachment: fixed;
+}
+.page-head{ background:linear-gradient(180deg,#fff,#f7faff); border:1px solid #e6ecff; border-radius:20px; padding:18px; box-shadow:0 14px 36px rgba(13,31,64,.08) }
+.cardy{ border:1px solid #e6ecff; background:linear-gradient(180deg,#fff,#f7faff); border-radius:16px; box-shadow:0 10px 28px rgba(13,31,64,.06) }
+.dim{color:var(--muted)}
+.kpi{font-weight:800; letter-spacing:.2px;}
+
+/* --- Chart sizing helpers --- */
+.chart-box{
+  position:relative;
+  width:100%;
+  height:300px;         /* uniform height for all charts */
+}
+.chart-box.tall{ height:340px; }   /* donut looks nicer slightly larger */
+.chart-box.short{ height:260px; }  /* KPIs if you ever add sparklines */
+
+@media (min-width: 992px){
+  .chart-box{ height:320px; }
+  .chart-box.tall{ height:360px; }
+}
+</style>
+</head>
+<body>
+  {% include 'nav.html' %}
+
+  <div class="container pb-5 mt-4">
+    <div class="page-head mb-3">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div>
+          <h1 class="h4 mb-1 kpi">Admin Analytics</h1>
+          <div class="dim">Last 14 days • Attempts / Accuracy / DAU • Levels • Activity • XP</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top KPIs (mock) -->
+    <div class="row g-3 mb-3">
+      <div class="col-md-4">
+        <div class="cardy p-3 h-100">
+          <div class="small dim">Total Attempts</div>
+          <div class="h3 mb-0" id="kAttempts">—</div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="cardy p-3 h-100">
+          <div class="small dim">Total Correct</div>
+          <div class="h3 mb-0" id="kCorrect">—</div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="cardy p-3 h-100">
+          <div class="small dim">Overall Accuracy</div>
+          <div class="h3 mb-0"><span id="kAcc">—</span> <span class="h6 dim">%</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Row 1 -->
+    <div class="row g-3 mb-3">
+      <div class="col-lg-4">
+        <div class="cardy p-3 h-100">
+          <div class="fw-bold mb-2">Attempts / Day</div>
+          <div class="chart-box"><canvas id="cAttempts"></canvas></div>
+        </div>
+      </div>
+      <div class="col-lg-4">
+        <div class="cardy p-3 h-100">
+          <div class="fw-bold mb-2">Accuracy / Day</div>
+          <div class="chart-box"><canvas id="cAccuracy"></canvas></div>
+        </div>
+      </div>
+      <div class="col-lg-4">
+        <div class="cardy p-3 h-100">
+          <div class="fw-bold mb-2">Daily Active Users</div>
+          <div class="chart-box"><canvas id="cDAU"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Row 2 -->
+    <div class="row g-3 mb-3">
+      <div class="col-lg-4">
+        <div class="cardy p-3 h-100">
+          <div class="fw-bold mb-2">Activity Split</div>
+          <div class="chart-box tall"><canvas id="cActivity"></canvas></div>
+        </div>
+      </div>
+      <div class="col-lg-4">
+        <div class="cardy p-3 h-100">
+          <div class="fw-bold mb-2">Users by Level</div>
+          <div class="chart-box"><canvas id="cLevels"></canvas></div>
+        </div>
+      </div>
+      <div class="col-lg-4">
+        <div class="cardy p-3 h-100">
+          <div class="fw-bold mb-2">Accuracy by Level</div>
+          <div class="chart-box"><canvas id="cAccLvl"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Row 3 -->
+    <div class="row g-3 mb-4">
+      <div class="col-lg-4">
+        <div class="cardy p-3 h-100">
+          <div class="fw-bold mb-2">Top Students (Attempts)</div>
+          <div class="chart-box"><canvas id="cTopUsers"></canvas></div>
+        </div>
+      </div>
+      <div class="col-lg-4">
+        <div class="cardy p-3 h-100">
+          <div class="fw-bold mb-2">XP Buckets</div>
+          <div class="chart-box"><canvas id="cXP"></canvas></div>
+        </div>
+      </div>
+      <div class="col-lg-4">
+        <div class="cardy p-3 h-100">
+          <div class="fw-bold mb-2">Confidence Calibration</div>
+          <div class="chart-box"><canvas id="cConf"></canvas></div>
+          <div class="small dim mt-2">Mock data shown below; will reflect real submissions once available.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+/* ---------- Palette ---------- */
+const PALETTE = [
+  'rgba(99,102,241,0.7)','rgba(16,185,129,0.7)','rgba(236,72,153,0.7)',
+  'rgba(234,179,8,0.7)','rgba(59,130,246,0.7)','rgba(168,85,247,0.7)',
+  'rgba(239,68,68,0.7)','rgba(20,184,166,0.7)','rgba(245,158,11,0.7)'
+];
+const BORDER = PALETTE.map(c=>c.replace('0.7','1'));
+const baseOpts = { responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false} } };
+const pct = x => Math.round((x||0)*100);
+
+/* ---------- Mock data (14 days) ---------- */
+function lastNDates(n){
+  const out=[]; const today=new Date();
+  for(let i=n-1;i>=0;i--){
+    const d=new Date(today); d.setDate(today.getDate()-i);
+    out.push(d.toLocaleDateString(undefined,{month:'numeric',day:'numeric'}));
+  }
+  return out;
+}
+const DATES = lastNDates(14);
+
+// Attempts ~50–140, Accuracy ~50–90%, DAU ~10–40
+const MOCK = {
+  summary: { total_attempts: 1523, total_corrects: 1040, overall_accuracy: 0.683 },
+  timeseries: {
+    attempts: [62,81,74,95,120,88,67,104,136,128,92,78,110,108],
+    accuracy: [0.62,0.58,0.64,0.66,0.72,0.69,0.63,0.7,0.76,0.73,0.68,0.65,0.71,0.74],
+    dau:      [18,22,19,26,31,24,20,28,36,33,25,21,29,32]
+  },
+  activity_mix: { attempts: 1523, story_reads: 430, vocab_new: 280 },
+  levels: {
+    labels: ['1','2','3','4','5','6','7','8'],
+    counts: [4,7,9,12,10,8,5,3],
+    acc_labels: ['1','2','3','4','5','6','7','8'],
+    acc_values: [0.55,0.58,0.61,0.66,0.69,0.72,0.75,0.78]
+  },
+  top_students: [
+    {username:'alex', attempts: 168},
+    {username:'mina', attempts: 154},
+    {username:'ryu',  attempts: 141},
+    {username:'sara', attempts: 128},
+    {username:'testtest', attempts: 119},
+    {username:'quinn', attempts: 112},
+  ],
+  xp_histogram: {
+    labels: ['0–199','200–399','400–599','600–799','800–999','1000+'],
+    counts: [3,7,11,9,6,4]
+  },
+  confidence: {
+    buckets: ['1','2','3','4','5'],
+    attempts: [95,180,420,360,240],
+    accuracy: [0.42,0.51,0.62,0.74,0.83]
+  }
+};
+
+/* ---------- Fill KPIs ---------- */
+document.getElementById('kAttempts').textContent = MOCK.summary.total_attempts;
+document.getElementById('kCorrect').textContent  = MOCK.summary.total_corrects;
+document.getElementById('kAcc').textContent      = pct(MOCK.summary.overall_accuracy);
+
+/* ---------- Charts ---------- */
+new Chart(document.getElementById('cAttempts'), {
+  type: 'bar',
+  data: { labels: DATES, datasets: [{ label:'Attempts', data: MOCK.timeseries.attempts, backgroundColor: PALETTE[0] }]},
+  options: { ...baseOpts, scales:{ y:{ beginAtZero:true, ticks:{precision:0} } } }
+});
+
+new Chart(document.getElementById('cAccuracy'), {
+  type: 'line',
+  data: { labels: DATES, datasets: [{ label:'Accuracy %', data: MOCK.timeseries.accuracy.map(p=>pct(p)), borderColor: BORDER[2], backgroundColor: PALETTE[2], tension:.28, fill:false }]},
+  options: { ...baseOpts, scales:{ y:{ beginAtZero:true, max:100, ticks:{ callback:v=>v+'%' } } } }
+});
+
+new Chart(document.getElementById('cDAU'), {
+  type: 'line',
+  data: { labels: DATES, datasets: [{ label:'DAU', data: MOCK.timeseries.dau, borderColor: BORDER[1], backgroundColor: PALETTE[1], tension:.28, fill:true }]},
+  options: { ...baseOpts, scales:{ y:{ beginAtZero:true, ticks:{precision:0} } } }
+});
+
+new Chart(document.getElementById('cActivity'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Attempts','Story Reads','New Vocab'],
+    datasets: [{ data: [MOCK.activity_mix.attempts, MOCK.activity_mix.story_reads, MOCK.activity_mix.vocab_new],
+                 backgroundColor: [PALETTE[4], PALETTE[1], PALETTE[2]] }]
+  },
+  options: { ...baseOpts, plugins:{ legend:{ position:'bottom' } }, cutout:'55%' }
+});
+
+new Chart(document.getElementById('cLevels'), {
+  type: 'bar',
+  data: { labels: MOCK.levels.labels, datasets: [{ label:'Users', data: MOCK.levels.counts, backgroundColor: PALETTE }]},
+  options: { ...baseOpts, scales:{ y:{ beginAtZero:true, ticks:{precision:0} } } }
+});
+
+new Chart(document.getElementById('cAccLvl'), {
+  type: 'bar',
+  data: { labels: MOCK.levels.acc_labels, datasets: [{ label:'Accuracy %', data: MOCK.levels.acc_values.map(p=>pct(p)), backgroundColor: PALETTE }]},
+  options: { ...baseOpts, scales:{ y:{ beginAtZero:true, max:100, ticks:{callback:v=>v+'%'} } } }
+});
+
+const tuLabels = MOCK.top_students.map(x=>x.username);
+const tuAttempts = MOCK.top_students.map(x=>x.attempts);
+new Chart(document.getElementById('cTopUsers'), {
+  type: 'bar',
+  data: { labels: tuLabels, datasets: [{ label:'Attempts', data: tuAttempts, backgroundColor: PALETTE }]},
+  options: { ...baseOpts, scales:{ y:{ beginAtZero:true, ticks:{precision:0} } } }
+});
+
+new Chart(document.getElementById('cXP'), {
+  type: 'bar',
+  data: { labels: MOCK.xp_histogram.labels, datasets: [{ label:'Users', data: MOCK.xp_histogram.counts, backgroundColor: PALETTE }]},
+  options: { ...baseOpts, scales:{ y:{ beginAtZero:true, ticks:{precision:0} } } }
+});
+
+new Chart(document.getElementById('cConf'), {
+  type: 'bar',
+  data: {
+    labels: MOCK.confidence.buckets,
+    datasets: [
+      { type:'bar',  label:'Attempts', data: MOCK.confidence.attempts, backgroundColor: PALETTE[4] },
+      { type:'line', label:'Accuracy %', data: MOCK.confidence.accuracy.map(p=>pct(p)), borderColor: BORDER[5], backgroundColor: PALETTE[5], tension:.28, yAxisID:'y1', fill:false }
+    ]
+  },
+  options: {
+    ...baseOpts,
+    plugins:{ legend:{ position:'bottom' } },
+    scales:{
+      y:  { beginAtZero:true, ticks:{precision:0} },
+      y1: { position:'right', beginAtZero:true, max:100, ticks:{ callback:v=>v+'%'} }
+    }
+  }
+});
+</script>
+</body>
+</html>

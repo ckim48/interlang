@@ -12,20 +12,12 @@
 
 <style>
 :root{
-  /* SAME TOKENS AS PROFILE */
   --ink:#0e1b35; --muted:#4b5567; --bg:#ffffff; --bg-soft:#f7f9ff; --grid:#0e1b3514;
   --brand:#3b82f6; --accent:#8f9bff; --ring:#cfe2ff;
   --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444;
-
-  /* Dark board tokens (only for the game area) */
-  --navy-900:#0b1220; --navy-800:#0e1730;
-  --glass: rgba(19,27,46,.72);
-
-  /* confetti colors */
+  --navy-900:#0b1220; --navy-800:#0e1730; --glass: rgba(19,27,46,.72);
   --point1:#60a5fa; --point2:#a78bfa; --point3:#f59e0b; --point4:#22c55e; --point5:#38bdf8; --point6:#e879f9;
 }
-
-/* Page bg matches Profile */
 html,body{height:100%}
 body{
   font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
@@ -36,136 +28,90 @@ body{
     radial-gradient(30vmax 30vmax at 10% 90%, #f7faff 0%, transparent 70%);
   background-attachment: fixed;
 }
-
-/* LIGHT COMPONENTS */
-.pill{
-  background:linear-gradient(180deg,#fff,#f3f7ff);
-  color:#223357; border:1px solid #e6ecff; font-weight:800;
-  border-radius:999px; padding:.38rem .8rem; display:inline-flex; align-items:center; gap:.5rem;
-  box-shadow:0 6px 16px rgba(13,31,64,.06);
-}
-.card-glass{
-  border:1px solid #e6ecff;
-  background:linear-gradient(180deg,#fff,#f7faff);
-  border-radius:18px; box-shadow:0 10px 28px rgba(13,31,64,.06);
-}
-.progress{ height:12px; background:#eef3ff; border:1px solid #e2ebff; border-radius:999px; overflow:hidden }
-.progress-bar{
-  background-image: linear-gradient(90deg, var(--brand), var(--accent));
-  background-size: 200% 100%; animation: move 3s linear infinite;
-}
+.pill{background:linear-gradient(180deg,#fff,#f3f7ff);color:#223357;border:1px solid #e6ecff;font-weight:800;border-radius:999px;padding:.38rem .8rem;display:inline-flex;align-items:center;gap:.5rem;box-shadow:0 6px 16px rgba(13,31,64,.06)}
+.card-glass{border:1px solid #e6ecff;background:linear-gradient(180deg,#fff,#f7faff);border-radius:18px;box-shadow:0 10px 28px rgba(13,31,64,.06)}
+.progress{height:12px;background:#eef3ff;border:1px solid #e2ebff;border-radius:999px;overflow:hidden}
+.progress-bar{background-image:linear-gradient(90deg,var(--brand),var(--accent));background-size:200% 100%;animation:move 3s linear infinite}
 @keyframes move{0%{background-position:0 0}100%{background-position:200% 0}}
-
-.btn-ghost{border:1px solid #e2ebff; color:#0e1b35; background:#fff}
-.btn-ghost:hover{border-color:#cfe2ff; background:#f7fbff}
-.btn-gradient{ border:none; color:#07110a; font-weight:800; background-image:linear-gradient(90deg,#16a34a,#22c55e); }
+.btn-ghost{border:1px solid #e2ebff;color:#0e1b35;background:#fff}
+.btn-ghost:hover{border-color:#cfe2ff;background:#f7fbff}
+.btn-gradient{border:none;color:#07110a;font-weight:800;background-image:linear-gradient(90deg,#16a34a,#22c55e)}
 .btn-gradient:hover{filter:brightness(1.05)}
-
 .alert-success{background:#eafff3;border:1px solid #baf3d0;color:#0b3b22}
 .alert-danger{background:#fff1f1;border:1px solid #ffd2d2;color:#7f1d1d}
-.toastline{
-  position:fixed; right:1rem; bottom:1rem; background:#eafff3; border:1px solid #baf3d0;
-  padding:.65rem .9rem; border-radius:12px; box-shadow:0 8px 24px rgba(13,31,64,.10); z-index:9999; display:none; color:#0b3b22;
-}
+.toastline{position:fixed;right:1rem;bottom:1rem;background:#eafff3;border:1px solid #baf3d0;padding:.65rem .9rem;border-radius:12px;box-shadow:0 8px 24px rgba(13,31,64,.10);z-index:9999;display:none;color:#0b3b22}
+.leave-toast{position:fixed;left:50%;transform:translateX(-50%) translateY(20px);bottom:1rem;background:#fff7ed;color:#7c2d12;border:1px solid #fed7aa;border-radius:12px;padding:.7rem 1rem;z-index:10000;box-shadow:0 8px 28px rgba(124,45,18,.18);display:none;font-weight:700}
+@keyframes slideUpFade{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+@keyframes fadeOut{to{opacity:0}}
+.board-wrap{background:linear-gradient(180deg,rgba(20,26,44,.96),rgba(12,19,38,.98));border:1px solid rgba(255,255,255,.08);color:#e6eeff;border-radius:18px;box-shadow:0 14px 50px rgba(4,10,28,.30)}
+.board{display:grid;grid-template-columns:repeat(4,1fr);gap:.9rem}
+.cell{position:relative;min-height:140px;border-radius:18px;cursor:pointer;overflow:hidden;background:
+  radial-gradient(600px 220px at 50% -40%, rgba(110,168,254,.18), transparent 60%),
+  linear-gradient(180deg, rgba(22,32,65,.95), rgba(15,23,46,.96));
+border:1px solid rgba(255,255,255,.10);transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease, outline .12s ease;perspective:900px;isolation:isolate}
+.cell:hover{transform:translateY(-2px);box-shadow:0 16px 40px rgba(0,0,0,.35);outline:2px solid rgba(99,102,241,.22)}
+.cell.correct{border-color:#38d878}
+.cell.wrong{border-color:#f08c8c}
+.cell.locked{pointer-events:none;opacity:.92}
+.cell.locked:hover{transform:none;box-shadow:none}
+.cell::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;background:conic-gradient(from 180deg, rgba(143,155,255,.45), rgba(110,168,254,.45), rgba(143,155,255,.45));-webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:.30;animation:spin 9s linear infinite}
+@keyframes spin{to{transform:rotate(1turn)}}
+.cell .inner{position:absolute;inset:0;transform-style:preserve-3d;transition:transform .45s cubic-bezier(.2,.7,.2,1)}
+.cell.flipped .inner{transform:rotateY(180deg)}
+.face{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:1rem;backface-visibility:hidden}
+.face.front{text-align:center;color:#dbe6ff}
+.type-emblem{display:inline-flex;align-items:center;gap:.75rem;padding:.65rem .9rem;border-radius:14px;font-weight:800;letter-spacing:.4px;font-size:1.05rem;color:#0d1430;background:linear-gradient(135deg,#dbeafe,#e0ecff);box-shadow:inset 0 0 0 1px rgba(16,33,67,.12),0 8px 22px rgba(0,0,0,.28)}
+.em-mcq{background:linear-gradient(135deg,#dbeafe,#e0ecff);color:#0b2a4c}
+.em-short{background:linear-gradient(135deg,#f8d2ff,#ffbfe4);color:#2a0b4c}
+.em-long{background:linear-gradient(135deg,#fef3c7,#fff2d7);color:#3f2504}
+.front-cta{margin-top:.55rem;color:#cbd5e1;font-weight:600;opacity:.95;letter-spacing:.2px;font-size:.9rem}
+.face.back{transform:rotateY(180deg);color:#dfe8ff;font-weight:700;font-size:1.1rem}
+.cell .badge-done{position:absolute;bottom:.55rem;right:.55rem;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.15);border-radius:999px;padding:.25rem .55rem;font-size:.82rem;z-index:2;color:#fff}
+.modal-content{background:linear-gradient(180deg,#fff,#f7faff);border:1px solid #e6ecff;color:var(--ink);border-radius:18px;box-shadow:0 20px 60px rgba(13,31,64,.18)}
+.modal-header{border-bottom:1px solid #e6ecff}
+.modal-footer{border-top:1px solid #e6ecff}
+.modal .form-text{color:#4b5567!important}
+.badge-type{border-radius:999px;padding:.35rem .7rem;font-weight:800;letter-spacing:.3px;border:1px solid #e2ebff}
+.badge-mcq{background:linear-gradient(180deg,#fff,#f3f7ff);color:#223357}
+.badge-short{background:linear-gradient(180deg,#fff8e6,#fff3cc);color:#5e4300}
+.badge-long{background:linear-gradient(180deg,#eef4ff,#e6eeff);color:#1f2b46}
+.option-btn{border:1px solid #e2ebff!important;background:linear-gradient(180deg,#fff,#f7faff)!important;color:#0e1b35!important;padding:14px 16px!important;border-radius:14px!important;transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease, background .12s ease}
+.option-btn:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(13,31,64,.10)}
+.option-btn.sel{border-color:#cfe2ff!important;box-shadow:0 0 0 .25rem var(--ring)}
+.option-btn.correct{border-color:#38d878!important;background:linear-gradient(145deg, rgba(34,197,94,.10), transparent)!important}
+.option-btn.wrong{border-color:#f08c8c!important;background:linear-gradient(145deg, rgba(248,113,113,.10), transparent)!important}
+.quiz-input{background:#fff;color:#0e1b35;border:1px solid #e2ebff;padding:14px 16px;border-radius:14px}
+.quiz-input:focus{border-color:#cfe2ff;box-shadow:0 0 0 .25rem var(--ring)}
+.dim{color:var(--muted)}
+.confetti{position:fixed;top:-10px;left:0;width:8px;height:12px;border-radius:2px;z-index:9999}
+.resume-toast{position:fixed;left:50%;transform:translateX(-50%);bottom:1rem;background:#eef7ff;color:#0e1b35;border:1px solid #cfe2ff;border-radius:12px;padding:.6rem .9rem;box-shadow:0 8px 24px rgba(13,31,64,.10);display:none;z-index:9999}
+.over-head{background:linear-gradient(135deg,#fee2e2,#fff1f1);border-bottom:1px solid #ffd9d9;padding-block:18px!important}
+.over-title{display:flex;align-items:center;gap:.6rem;margin:0;font-weight:900;letter-spacing:.2px;color:#7f1d1d}
+.over-title .glyph{display:inline-grid;place-items:center;width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#ffd2d2,#ffe8e8);border:1px solid #ffc9c9;color:#991b1b;font-size:20px;box-shadow:inset 0 1px 0 #fff,0 6px 14px rgba(127,29,29,.08)}
+.over-body{background:linear-gradient(180deg,#fff,#f7faff);color:#374151}
+.stat-row{display:flex;flex-wrap:wrap;gap:.5rem .6rem;margin:.4rem 0 0}
+.stat-chip{display:inline-flex;align-items:baseline;gap:.35rem;border:1px solid #e6ecff;background:#fff;color:#223357;padding:.35rem .6rem;border-radius:12px;font-weight:800;box-shadow:0 6px 16px rgba(13,31,64,.06)}
+.stat-chip small{font-weight:700;color:#60719a}
+.over-footer{border-top:1px solid #e6ecff;background:linear-gradient(180deg,#fff,#f7faff)}
+.btn-ghost-danger{border:1px solid #ffc9c9;background:#fff;color:#991b1b;font-weight:800;border-radius:12px}
+.btn-ghost-danger:hover{background:#fff6f6}
+.explain-block{border:1px solid #e6ecff;background:linear-gradient(180deg,#fff,#f7faff);border-radius:12px;padding:.75rem .9rem;color:#223357}
+.explain-title{font-weight:800;letter-spacing:.2px;margin-bottom:.25rem;color:#1f2b46;font-size:.95rem}
+.explain-body{color:#45557a}
+.level-head{background:linear-gradient(135deg,#dcfce7,#e9ffe9);border-bottom:1px solid #bbf7d0;padding-block:18px!important}
+.level-title{display:flex;align-items:center;gap:.6rem;margin:0;font-weight:900;letter-spacing:.2px;color:#065f46}
+.level-title .burst{width:44px;height:44px;border-radius:14px;display:inline-grid;place-items:center;font-size:22px;background:linear-gradient(135deg,#bbf7d0,#86efac);border:1px solid #a7f3d0;color:#065f46;box-shadow:inset 0 1px 0 #fff,0 10px 24px rgba(6,95,70,.14);animation:pop 450ms cubic-bezier(.2,.8,.2,1)}
+@keyframes pop{0%{transform:scale(.6);opacity:.2}60%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}}
+.level-body{background:linear-gradient(180deg,#fff,#f7faff);color:#0f172a}
+.level-ribbon{display:inline-flex;align-items:center;gap:.5rem;font-weight:900;padding:.5rem .8rem;border-radius:999px;background:linear-gradient(90deg,#34d399,#22c55e);color:#052e1a;box-shadow:0 8px 24px rgba(5,46,26,.15)}
+.level-number{font-size:2.25rem;font-weight:900;background:linear-gradient(90deg,#34d399,#a7f3d0);-webkit-background-clip:text;background-clip:text;color:transparent}
 
-/* DARK BOARD AREA */
-.board-wrap{
-  background: linear-gradient(180deg, rgba(20,26,44,.96), rgba(12,19,38,.98));
-  border:1px solid rgba(255,255,255,.08); color:#e6eeff; border-radius:18px;
-  box-shadow: 0 14px 50px rgba(4,10,28,.30);
-}
-.board{ display:grid; grid-template-columns:repeat(4, 1fr); gap:.9rem; }
-
-.cell{
-  position:relative; min-height:140px; border-radius:18px; cursor:pointer; overflow:hidden;
-  background:
-    radial-gradient(600px 220px at 50% -40%, rgba(110,168,254,.18), transparent 60%),
-    linear-gradient(180deg, rgba(22,32,65,.95), rgba(15,23,46,.96));
-  border:1px solid rgba(255,255,255,.10);
-  transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease, outline .12s ease;
-  perspective: 900px; isolation: isolate;
-}
-.cell:hover{
-  transform:translateY(-2px); box-shadow:0 16px 40px rgba(0,0,0,.35);
-  outline: 2px solid rgba(99,102,241,.22);
-}
-.cell.correct{ border-color:#38d878; }
-.cell.wrong{ border-color:#f08c8c; }
-.cell.locked{ pointer-events:none; opacity:.92; }
-.cell.locked:hover{ transform:none; box-shadow:none }
-.cell::before{
-  content:""; position:absolute; inset:0; border-radius:inherit; padding:1px;
-  background: conic-gradient(from 180deg, rgba(143,155,255,.45), rgba(110,168,254,.45), rgba(143,155,255,.45));
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor; mask-composite: exclude;
-  opacity:.30; animation: spin 9s linear infinite;
-}
-@keyframes spin{ to{ transform: rotate(1turn); } }
-
-.cell .inner{ position:absolute; inset:0; transform-style: preserve-3d; transition: transform .45s cubic-bezier(.2,.7,.2,1); }
-.cell.flipped .inner{ transform: rotateY(180deg); }
-.face{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:1rem; backface-visibility:hidden; }
-
-.face.front{ text-align:center; color:#dbe6ff; }
-.type-emblem{
-  display:inline-flex; align-items:center; gap:.75rem; padding:.65rem .9rem;
-  border-radius:14px; font-weight:800; letter-spacing:.4px; font-size:1.05rem;
-  color:#0d1430; background: linear-gradient(135deg, #dbeafe, #e0ecff);
-  box-shadow: inset 0 0 0 1px rgba(16,33,67,.12), 0 8px 22px rgba(0,0,0,.28);
-}
-.em-mcq{ background:linear-gradient(135deg, #dbeafe, #e0ecff); color:#0b2a4c; }
-.em-short{ background: linear-gradient(135deg, #f8d2ff, #ffbfe4); color:#2a0b4c; }
-.em-long{ background:linear-gradient(135deg, #fef3c7, #fff2d7); color:#3f2504; }
-.front-cta{ margin-top:.55rem; color:#cbd5e1; font-weight:600; opacity:.95; letter-spacing:.2px; font-size:.9rem; }
-
-.face.back{ transform: rotateY(180deg); color:#dfe8ff; font-weight:700; font-size:1.1rem; }
-
-.cell .badge-done{
-  position:absolute; bottom:.55rem; right:.55rem;
-  background:rgba(255,255,255,.09); border:1px solid rgba(255,255,255,.15);
-  border-radius:999px; padding:.25rem .55rem; font-size:.82rem; z-index:2; color:#fff;
-}
-
-/* Modal (light) */
-.modal-content{
-  background:linear-gradient(180deg,#fff,#f7faff);
-  border:1px solid #e6ecff; color:var(--ink); border-radius:18px;
-  box-shadow:0 20px 60px rgba(13,31,64,.18);
-}
-.modal-header{ border-bottom:1px solid #e6ecff; }
-.modal-footer{ border-top:1px solid #e6ecff; }
-.modal .form-text{ color:#4b5567 !important; }
-.badge-type{ border-radius:999px; padding:.35rem .7rem; font-weight:800; letter-spacing:.3px; border:1px solid #e2ebff; }
-.badge-mcq{ background:linear-gradient(180deg,#fff,#f3f7ff); color:#223357;}
-.badge-short{ background:linear-gradient(180deg,#fff8e6,#fff3cc); color:#5e4300;}
-.badge-long{ background:linear-gradient(180deg,#eef4ff,#e6eeff); color:#1f2b46;}
-
-.option-btn{
-  border:1px solid #e2ebff !important;
-  background:linear-gradient(180deg,#fff,#f7faff) !important;
-  color:#0e1b35 !important; padding:14px 16px !important; border-radius:14px !important;
-  transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease, background .12s ease;
-}
-.option-btn:hover{ transform:translateY(-2px); box-shadow:0 8px 24px rgba(13,31,64,.10) }
-.option-btn.sel{ border-color:#cfe2ff!important; box-shadow:0 0 0 .25rem var(--ring) }
-.option-btn.correct{ border-color:#38d878!important; background:linear-gradient(145deg, rgba(34,197,94,.10), transparent)!important; }
-.option-btn.wrong{ border-color:#f08c8c!important; background:linear-gradient(145deg, rgba(248,113,113,.10), transparent)!important; }
-
-.quiz-input{
-  background:#fff; color:#0e1b35; border:1px solid #e2ebff; padding:14px 16px; border-radius:14px;
-}
-.quiz-input:focus{ border-color:#cfe2ff; box-shadow:0 0 0 .25rem var(--ring) }
-
-.dim{ color:var(--muted) }
-
-.confetti{ position:fixed; top:-10px; left:0; width:8px; height:12px; border-radius:2px; z-index:9999 }
-
-.resume-toast{
-  position:fixed; left:50%; transform:translateX(-50%);
-  bottom:1rem; background:#eef7ff; color:#0e1b35;
-  border:1px solid #cfe2ff; border-radius:12px; padding:.6rem .9rem;
-  box-shadow:0 8px 24px rgba(13,31,64,.10); display:none; z-index:9999;
-}
+/* Confidence UI */
+.conf-block{border:1px dashed #d8e3ff;background:#f7faff;border-radius:12px;padding:.6rem .7rem;margin-top:.5rem}
+.conf-title{font-weight:800;color:#1f2b46;font-size:.9rem;margin-bottom:.25rem}
+.conf-choices{display:flex;gap:.4rem;flex-wrap:wrap}
+.conf-chip{border:1px solid #e2ebff;background:#fff;border-radius:999px;padding:.25rem .6rem;font-weight:800;cursor:pointer}
+.conf-chip.sel{border-color:#cfe2ff;box-shadow:0 0 0 .2rem #cfe2ff55}
 </style>
 </head>
 <body>
@@ -177,8 +123,14 @@ body{
     <div class="d-flex align-items-center gap-3 flex-wrap">
       <div class="me-auto d-flex align-items-center gap-2">
         <span class="pill" id="lifeChip"><i class="bi bi-heart-fill"></i> Lives 3</span>
-        <span class="pill" id="xpChip"><i class="bi bi-stars"></i> XP 0</span>
+        <span class="pill" id="xpChip"><i class="bi bi-stars"></i> Board XP 0</span>
         <span class="pill" id="lineChip"><i class="bi bi-grid-3x3"></i> Lines 0</span>
+        <span class="pill" id="profileChip">
+          <i class="bi bi-person-fill"></i>
+          Lv <span id="profileLevel">{{ user_level|default(1) }}</span>
+          • <span id="profileXPNow">{{ (user_xp|default(0)) % 100 }}</span>/100
+          • Total <span id="profileXPTotal">{{ user_xp|default(0) }}</span>
+        </span>
       </div>
       <div class="flex-grow-1" style="min-width:220px; max-width:420px;">
         <div class="small mb-1" style="color:#223357;">Progress <span id="progLabel"></span></div>
@@ -187,12 +139,10 @@ body{
     </div>
   </div>
 
-  <!-- Board -->
   <div class="board-wrap border-0 mb-3 p-3">
     <div class="board" id="board"></div>
   </div>
 
-  <!-- Finish Card -->
   <div class="card-glass border-0 text-center mt-3" id="finishCard" style="display:none">
     <div class="card-body p-5">
       <h2 class="display-6 fw-800 mb-2" id="finishTitle"
@@ -202,14 +152,19 @@ body{
       <p id="finishStats" class="mb-4 text-secondary" style="color:#d0dbff !important;"></p>
       <div class="d-flex justify-content-center gap-2">
         <a class="btn btn-ghost px-4" href="{{ url_for('home') }}">Back to Home</a>
+        <form method="POST" action="{{ url_for('submit_quiz_instance', quiz_id=quiz_id) }}">
+          <button class="btn btn-gradient px-4" type="submit">
+            <i class="bi bi-save2 me-1"></i> Save Result
+          </button>
+        </form>
       </div>
     </div>
   </div>
 </div>
 
-<!-- Toasts -->
 <div class="toastline" id="toastLine"><i class="bi bi-trophy me-1"></i> Line completed! +20 XP</div>
 <div class="resume-toast" id="resumeToast"><i class="bi bi-clock-history me-1"></i> Resumed your saved board.</div>
+<div class="leave-toast" id="leaveToast" role="status" aria-live="assertive"><i class="bi bi-exclamation-triangle-fill"></i> Don't leave yet — you must need to answer to the question!</div>
 
 <!-- Question Modal -->
 <div class="modal fade" id="qModal" tabindex="-1" aria-hidden="true">
@@ -222,6 +177,8 @@ body{
       </div>
       <div class="modal-body">
         <p class="text-secondary mb-3" id="modalPrompt"></p>
+
+        <!-- MCQ / Short / Long blocks -->
         <div id="modalMCQ" class="vstack gap-2 mb-3" style="display:none"></div>
         <div id="modalShort" style="display:none">
           <input class="quiz-input w-100" id="modalShortInput" placeholder="Type your answer here..." />
@@ -230,7 +187,21 @@ body{
           <textarea class="quiz-input w-100" rows="3" id="modalLongInput" placeholder="Write one clear sentence..."></textarea>
           <div class="form-text">Use every required word (case-insensitive).</div>
         </div>
+
+        <!-- Confidence (20% chance) -->
+        <div id="confidenceBlock" class="conf-block" style="display:none">
+          <div class="conf-title">How confident are you about this question? (1–5)</div>
+          <div class="conf-choices" id="confidenceChoices">
+            <!-- chips inserted by JS -->
+          </div>
+          <div class="form-text">We’ll compare your confidence with your performance to help you grow.</div>
+        </div>
+
         <div id="modalFeedback" class="mt-3"></div>
+
+        <!-- Explanation area (and optional growth feedback) -->
+        <div id="modalExplain" class="mt-2" style="display:none"></div>
+
         <div id="modalLockHint" class="mt-2" style="display:none">
           <i class="bi bi-lock-fill me-1"></i> This cell is locked (already checked).
         </div>
@@ -252,28 +223,56 @@ body{
 <div class="modal fade" id="overModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-md modal-dialog-centered">
     <div class="modal-content">
-      <div class="modal-header align-items-center">
-        <h5 class="modal-title">
-          <i class="bi bi-emoji-frown me-2"></i> Out of lives
+      <div class="modal-header over-head">
+        <h5 class="over-title">
+          <span class="glyph"><i class="bi bi-emoji-frown"></i></span>
+          Out of lives
         </h5>
-        <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal" aria-label="Close"></button>
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body">
-        <p class="mb-0 text-secondary" id="overStats"></p>
+      <div class="modal-body over-body">
+        <p class="mb-2">You ran out of lives on this board. Here’s how you did:</p>
+        <div class="stat-row">
+          <span class="stat-chip"><small>Solved</small> <b id="overSolved">0/16</b></span>
+          <span class="stat-chip"><small>Lines</small> <b id="overLines">0</b></span>
+          <span class="stat-chip"><small>XP</small> <b id="overXP">0</b></span>
+        </div>
+        <p id="overStats" class="visually-hidden"></p>
+        <div class="mt-3 small text-secondary">
+          Tip: aim for diagonals early or pick 2–3 easy cells per row to maximize line chances.
+        </div>
       </div>
-      <div class="modal-footer">
-        <a class="btn btn-ghost" href="{{ url_for('home') }}">
-          <i class="bi bi-house-door"></i> Home
-        </a>
-        <button class="btn btn-gradient" id="overRetryBtn" type="button">
-          <i class="bi bi-arrow-repeat me-1"></i> Try again
-        </button>
+      <div class="modal-footer over-footer">
+        <a class="btn btn-ghost" href="{{ url_for('home') }}"><i class="bi bi-house-door me-1"></i> Home</a>
+        <button class="btn btn-gradient" id="overRetryBtn" type="button"><i class="bi bi-arrow-repeat me-1"></i> Try again</button>
       </div>
     </div>
   </div>
 </div>
 
-<!-- JS -->
+<!-- Level Up Modal -->
+<div class="modal fade" id="levelUpModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-sm modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header level-head">
+        <h5 class="level-title">
+          <span class="burst"><i class="bi bi-award"></i></span>
+          Level Up!
+        </h5>
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body level-body text-center">
+        <div class="mb-1"><span class="level-ribbon"><i class="bi bi-lightning-charge-fill me-1"></i> Congrats!</span></div>
+        <div class="level-number mt-2" id="levelUpNumber">Lv 2</div>
+        <div class="small text-muted mt-1">Total XP: <b id="levelUpXP">120</b></div>
+      </div>
+      <div class="modal-footer" style="border-top:1px solid #e6ecff; background:linear-gradient(180deg,#fff,#f7faff);">
+        <button class="btn btn-gradient w-100" data-bs-dismiss="modal"><i class="bi bi-emoji-laughing me-1"></i> Awesome</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 /* ========= Template data ========= */
@@ -281,46 +280,66 @@ const RAW = {{ qs|tojson }};
 const QUIZ_ID = {{ quiz_id }};
 const BOARD_SIZE = 4, TOTAL = 16;
 
+/* ========= Feature probabilities ========= */
+const CONFIDENCE_PROB = 0.20; // ask 20% of the time
+const GROWTH_FEEDBACK_PROB = 0.20; // show growth feedback 20% of the time
+
 /* ========= Build fixed-position map ========= */
 const POSMAP = {};
 for (const q of RAW){
   const p = (q.extra_parsed && typeof q.extra_parsed.pos === 'number') ? q.extra_parsed.pos : null;
   if (p!==null && p>=0 && p<16) POSMAP[p] = q;
 }
-const QUESTIONS = Array.from({length:16}, (_,i)=> POSMAP[i]);
+const QUESTIONS = Array.from({length:16}, (_,i)=> POSMAP[i] ?? RAW.find(r => !Object.values(POSMAP).includes(r)));
 
-/* ========= State (with persistence) ========= */
+/* ========= Profile (persisted on server) ========= */
+let PROFILE_LEVEL = Number({{ user_level|default(1) }});
+let PROFILE_XP    = Number({{ user_xp|default(0) }});
+const elProfileLevel   = document.getElementById('profileLevel');
+const elProfileXPNow   = document.getElementById('profileXPNow');
+const elProfileXPTotal = document.getElementById('profileXPTotal');
+
+let LAST_LEVEL = PROFILE_LEVEL;
+let LAST_XP    = PROFILE_XP;
+
+/* ========= Board State (local) ========= */
 let lives = 3, xp = 0, lines = 0;
 let selectedPos = null;
 let answered = new Set();
 let correct = new Set();
 let awardedLines = new Set();
+let finished = false;
 
+/* ========= Confidence state ========= */
+const askConfidenceMap = new Map();    // pos -> bool (whether we asked on this pos)
+const confidenceValue  = new Map();    // pos -> 1..5 selected
+const growthAskedMap   = new Map();    // pos -> bool (whether to show growth feedback)
+
+/* ========= Local persistence ========= */
 const LS_KEY = (id)=> `bingo_state_${id}`;
 function exportState(){
   return {
     lives, xp, lines,
-    answered: [...answered],
-    correct:  [...correct],
-    awardedLines: [...awardedLines],
+    answered:[...answered], correct:[...correct], awardedLines:[...awardedLines],
+    askC:[...askConfidenceMap.entries()], confV:[...confidenceValue.entries()], growthA:[...growthAskedMap.entries()],
     ts: Date.now()
   };
 }
-function saveState(){
-  try{ localStorage.setItem(LS_KEY(QUIZ_ID), JSON.stringify(exportState())); }catch(e){}
-}
+function saveState(){ try{ localStorage.setItem(LS_KEY(QUIZ_ID), JSON.stringify(exportState())); }catch(e){} }
 function loadState(){
   try{
     const raw = localStorage.getItem(LS_KEY(QUIZ_ID));
     if(!raw) return false;
-    const s = JSON.parse(raw);
-    if(!s || typeof s!=='object') return false;
-    lives = Number.isFinite(s.lives)? s.lives : lives;
-    xp    = Number.isFinite(s.xp)? s.xp : xp;
-    lines = Number.isFinite(s.lines)? s.lines : lines;
+    const s = JSON.parse(raw); if(!s || typeof s!=='object') return false;
+    if (Number.isFinite(s.lives)) lives = s.lives;
+    if (Number.isFinite(s.xp))    xp    = s.xp;
+    if (Number.isFinite(s.lines)) lines = s.lines;
     answered = new Set(Array.isArray(s.answered)? s.answered : []);
     correct  = new Set(Array.isArray(s.correct)?  s.correct  : []);
     awardedLines = new Set(Array.isArray(s.awardedLines)? s.awardedLines : []);
+    if (Array.isArray(s.askC)) s.askC.forEach(([k,v])=> askConfidenceMap.set(Number(k), !!v));
+    if (Array.isArray(s.confV)) s.confV.forEach(([k,v])=> confidenceValue.set(Number(k), Number(v)));
+    if (Array.isArray(s.growthA)) s.growthA.forEach(([k,v])=> growthAskedMap.set(Number(k), !!v));
     return true;
   }catch(e){ return false; }
 }
@@ -339,6 +358,7 @@ const finishTitle = document.getElementById('finishTitle');
 const finishStats = document.getElementById('finishStats');
 
 const resumeToast = document.getElementById('resumeToast');
+const leaveToast = document.getElementById('leaveToast');
 
 /* Modal refs */
 const qModalEl = document.getElementById('qModal');
@@ -353,16 +373,30 @@ const modalLong = document.getElementById('modalLong');
 const modalShortInput = document.getElementById('modalShortInput');
 const modalLongInput = document.getElementById('modalLongInput');
 const modalFeedback = document.getElementById('modalFeedback');
+const modalExplain  = document.getElementById('modalExplain');
 const modalLockHint = document.getElementById('modalLockHint');
 const modalClearBtn = document.getElementById('modalClearBtn');
 const modalCheckBtn = document.getElementById('modalCheckBtn');
 const modalCloseBtn = document.getElementById('modalCloseBtn');
 
+/* Confidence UI refs */
+const confBlock = document.getElementById('confidenceBlock');
+const confChoices = document.getElementById('confidenceChoices');
+
 /* Game Over modal refs */
 const overModalEl  = document.getElementById('overModal');
 const overModal    = new bootstrap.Modal(overModalEl, { backdrop:'static', keyboard:false });
 const overStats    = document.getElementById('overStats');
+const overSolved   = document.getElementById('overSolved');
+const overLines    = document.getElementById('overLines');
+const overXP       = document.getElementById('overXP');
 const overRetryBtn = document.getElementById('overRetryBtn');
+
+/* Level Up modal refs */
+const levelUpEl   = document.getElementById('levelUpModal');
+const levelUpModal= new bootstrap.Modal(levelUpEl, { backdrop:'static', keyboard:true });
+const levelUpNumber = document.getElementById('levelUpNumber');
+const levelUpXP     = document.getElementById('levelUpXP');
 
 /* ========= Helpers ========= */
 function typeMeta(t){
@@ -372,36 +406,34 @@ function typeMeta(t){
 }
 function requiredWords(q){
   let req = (q.extra_parsed && Array.isArray(q.extra_parsed.required_words)) ? q.extra_parsed.required_words : [];
-  if (!req.length && q.correct){
-    try{ const parsed = JSON.parse(q.correct); if (Array.isArray(parsed)) req = parsed; }catch(e){}
-  }
+  if (!req.length && q.correct){ try{ const parsed = JSON.parse(q.correct); if (Array.isArray(parsed)) req = parsed; }catch(e){} }
   return (req || []).map(String);
 }
 function containsWord(text, word){
-  const esc = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const esc = word.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
   const re = new RegExp(`\\b${esc}\\b`, 'i');
   return re.test(text);
 }
 function formatPrompt(s){ return escapeHtml(s||'').replace(/\n/g,'<br>'); }
-function escapeHtml(s){ return String(s??'').replace(/[&<>"']/g,(m)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
+function escapeHtml(s){ return String(s??'').replace(/[&<>"']/g,(m)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;' }[m])); }
 function normalize(s){ return String(s||'').trim().toLowerCase(); }
-
-/* Reset the board for retry */
-function resetBoard(){
-  lives = 3; xp = 0; lines = 0;
-  selectedPos = null;
-  answered = new Set();
-  correct = new Set();
-  awardedLines = new Set();
-  finishCard.style.display = 'none';
-  renderBoard();
-  updateHUD();
-  clearState();
+function getBestExplain(q){
+  const ex = (q && q.extra_parsed) ? q.extra_parsed : {};
+  const exp = (typeof ex.explanation === 'string' && ex.explanation.trim()) ? ex.explanation.trim() : '';
+  const hint = (typeof ex.hint === 'string' && ex.hint.trim()) ? ex.hint.trim() : '';
+  return exp || hint || '';
 }
-overRetryBtn.addEventListener('click', ()=>{
-  overModal.hide();
-  resetBoard();
-});
+function isBoardActive(){ return !finished && lives > 0 && answered.size < TOTAL; }
+
+/* Reset board */
+function resetBoard(){
+  lives = 3; xp = 0; lines = 0; finished = false;
+  selectedPos = null; answered = new Set(); correct = new Set(); awardedLines = new Set();
+  askConfidenceMap.clear(); confidenceValue.clear(); growthAskedMap.clear();
+  finishCard.style.display = 'none';
+  renderBoard(); updateHUD(); clearState();
+}
+overRetryBtn.addEventListener('click', ()=>{ overModal.hide(); resetBoard(); });
 
 /* ========= Render Board ========= */
 function renderBoard(){
@@ -438,21 +470,12 @@ function renderBoard(){
       </div>
     `;
 
-    if (correct.has(i)) {
-      cell.classList.add('correct','locked');
-      cell.insertAdjacentHTML('beforeend','<span class="badge-done">✓</span>');
-    } else if (answered.has(i)) {
-      cell.classList.add('wrong','locked');
-      cell.insertAdjacentHTML('beforeend','<span class="badge-done">✗</span>');
-    }
-
-    /* NEW: hard stop when out of lives */
-    if (lives <= 0) {
-      cell.classList.add('locked');
-    }
+    if (correct.has(i)) { cell.classList.add('correct','locked'); cell.insertAdjacentHTML('beforeend','<span class="badge-done">✓</span>'); }
+    else if (answered.has(i)) { cell.classList.add('wrong','locked'); cell.insertAdjacentHTML('beforeend','<span class="badge-done">✗</span>'); }
+    if (lives <= 0) cell.classList.add('locked');
 
     cell.addEventListener('click', ()=>{
-      if (lives <= 0) return;  // NEW: block interaction entirely
+      if (lives <= 0) return;
       if (answered.has(i) || finishCard.style.display !== 'none') return;
       selectedPos = i;
       cell.classList.add('flipped');
@@ -463,15 +486,29 @@ function renderBoard(){
   }
 }
 
-/* ========= Modal ========= */
-function hideAllModalBlocks(){
-  modalMCQ.style.display='none';
-  modalShort.style.display='none';
-  modalLong.style.display='none';
+/* ========= Confidence UI builders ========= */
+function ensureConfidenceChips(selectedVal){
+  confChoices.innerHTML = '';
+  for (let v=1; v<=5; v++){
+    const b = document.createElement('button');
+    b.type='button';
+    b.className = 'conf-chip';
+    if (selectedVal === v) b.classList.add('sel');
+    b.textContent = v;
+    b.addEventListener('click', ()=>{
+      [...confChoices.children].forEach(x=> x.classList.remove('sel'));
+      b.classList.add('sel');
+      confidenceValue.set(selectedPos, v);
+    });
+    confChoices.appendChild(b);
+  }
 }
 
+/* ========= Modal ========= */
+function hideAllModalBlocks(){ modalMCQ.style.display='none'; modalShort.style.display='none'; modalLong.style.display='none'; }
+
 function openModalFor(pos){
-  if (lives <= 0) return; // NEW: never open modal if no lives
+  if (lives <= 0) return;
   const q = QUESTIONS[pos]; if (!q) return;
 
   const m = typeMeta(q.qtype);
@@ -481,13 +518,28 @@ function openModalFor(pos){
 
   modalPrompt.innerHTML = formatPrompt(q.prompt||'');
   modalFeedback.innerHTML = '';
+  modalExplain.style.display = 'none';
+  modalExplain.textContent = '';
 
   const isSolved   = correct.has(pos);
   const isAnswered = answered.has(pos);
-
   modalLockHint.style.display = isAnswered ? 'block' : 'none';
-
   hideAllModalBlocks();
+
+  // Decide once per cell whether to ask confidence & show growth feedback
+  if (!askConfidenceMap.has(pos)) askConfidenceMap.set(pos, Math.random() < CONFIDENCE_PROB);
+  if (!growthAskedMap.has(pos))   growthAskedMap.set(pos,   Math.random() < GROWTH_FEEDBACK_PROB);
+
+  // Confidence block visibility & existing selection
+  const willAskConf = askConfidenceMap.get(pos) && !isAnswered;
+  const existingConf = confidenceValue.get(pos) || null;
+  if (willAskConf){
+    confBlock.style.display = 'block';
+    ensureConfidenceChips(existingConf);
+  } else {
+    confBlock.style.display = 'none';
+    confChoices.innerHTML = '';
+  }
 
   if (q.qtype==='mcq'){
     modalMCQ.style.display='block';
@@ -512,17 +564,36 @@ function openModalFor(pos){
         if (idx === corrIx) btn.classList.add('correct');
         else btn.classList.add('opacity-50');
       });
+      const ex = getBestExplain(q);
+      if (ex){
+        modalExplain.style.display = 'block';
+        modalExplain.innerHTML = `<div class="explain-block"><div class="explain-title">Answer explanation</div><div class="explain-body">${escapeHtml(ex)}</div></div>`;
+      }
     }
 
   } else if (q.qtype==='short'){
     modalShort.style.display='block';
     modalShortInput.value = '';
     modalShortInput.disabled = isAnswered;
+    if (isAnswered){
+      const ex = getBestExplain(q);
+      if (ex){
+        modalExplain.style.display = 'block';
+        modalExplain.innerHTML = `<div class="explain-block"><div class="explain-title">Answer explanation</div><div class="explain-body">${escapeHtml(ex)}</div></div>`;
+      }
+    }
 
   } else {
     modalLong.style.display='block';
     modalLongInput.value = '';
     modalLongInput.disabled = isAnswered;
+    if (isAnswered){
+      const ex = getBestExplain(q);
+      if (ex){
+        modalExplain.style.display = 'block';
+        modalExplain.innerHTML = `<div class="explain-block"><div class="explain-title">Answer explanation</div><div class="explain-body">${escapeHtml(ex)}</div></div>`;
+      }
+    }
   }
 
   if (isSolved) setFooter('solved');
@@ -536,6 +607,8 @@ qModalEl.addEventListener('hidden.bs.modal', ()=>{
   const cell = board.querySelector(`.cell[data-pos="${selectedPos}"]`);
   if (cell && cell.classList.contains('flipped')) cell.classList.remove('flipped');
   modalFeedback.innerHTML = '';
+  modalExplain.style.display = 'none';
+  modalExplain.textContent = '';
 });
 
 qModalEl.addEventListener('keydown', (e)=>{
@@ -550,6 +623,47 @@ qModalEl.addEventListener('keydown', (e)=>{
   if (e.key==='Enter'){ e.preventDefault(); onModalCheck(); }
 });
 
+/* ========= API: submit answer & sync HUD/Profile ========= */
+async function submitAnswerToServer(questionId, responseText, confOpt){
+  try{
+    const payload = { quiz_id: QUIZ_ID, question_id: questionId, response: responseText };
+    if (typeof confOpt === 'number') payload.confidence = confOpt; // attach confidence if present
+    const res = await fetch('/api/quiz/answer', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+
+    // Save previous profile state BEFORE applying new values
+    const prevLevel = PROFILE_LEVEL;
+    const prevXP    = PROFILE_XP;
+
+    if (typeof data.lives === 'number') lives = data.lives;
+    if (typeof data.xp    === 'number') xp    = data.xp;
+    if (typeof data.lines === 'number') lines = data.lines;
+    if (Array.isArray(data.correct))     correct = new Set(data.correct);
+
+    if (typeof data.user_level === 'number') PROFILE_LEVEL = data.user_level;
+    if (typeof data.user_xp    === 'number') PROFILE_XP    = data.user_xp;
+
+    if (data.explanation){
+      modalExplain.style.display = 'block';
+      modalExplain.innerHTML = `<div class="explain-block"><div class="explain-title">Answer explanation</div><div class="explain-body">${escapeHtml(data.explanation)}</div></div>`;
+    }
+
+    // Detect level up
+    if (PROFILE_LEVEL > prevLevel || Math.floor(PROFILE_XP/100) > Math.floor(prevXP/100)){
+      triggerLevelUp(PROFILE_LEVEL, PROFILE_XP);
+    }
+
+    return { ok: res.ok, data };
+  }catch(err){
+    console.error(err);
+    return { ok:false, data:null };
+  }
+}
+
 /* ========= Check ========= */
 document.getElementById('modalClearBtn').addEventListener('click', ()=>{
   if (selectedPos===null) return;
@@ -558,66 +672,120 @@ document.getElementById('modalClearBtn').addEventListener('click', ()=>{
   if (q.qtype==='short') modalShortInput.value = '';
   if (q.qtype==='long') modalLongInput.value = '';
   modalFeedback.innerHTML = '';
+  modalExplain.style.display = 'none';
+  modalExplain.textContent = '';
+  // reset confidence selection (only visual; keep stored value unless user re-selects)
+  [...confChoices.children].forEach(x=> x.classList.remove('sel'));
 });
+
 document.getElementById('modalCheckBtn').addEventListener('click', onModalCheck);
 
-// ===== Check handler (shows result, never auto-closes the modal) =====
-function onModalCheck(){
-  if (lives <= 0) return;   // NEW: block checking when no lives
-  if (selectedPos===null) return;
-  const q = QUESTIONS[selectedPos];
-  if (!q || answered.has(selectedPos)) return;
+function growthMessage(conf, wasCorrect){
+  const high = conf >= 4, low = conf <= 2;
+  if (wasCorrect && low)  return `You weren't confident, but you did great! You'll be able to handle even bigger challenges in the future!`;
+  if (wasCorrect && high) return `Just as expected, you did an awesome job! Keep pushing forward!`;
+  if (!wasCorrect && high) return `Although the result wasn't as expected, it's the effort that matters! You'll do better next time.`;
+  if (!wasCorrect && low)  return `Just attempting the problem is a great achievement! Let's revisit this and build your confidence.`;
+  // medium confidence fallback
+  return wasCorrect ? `Nice work—your result matches your effort. Keep going!` : `Good attempt—review this one and try again.`;
+}
 
-  let ok = false;
+async function onModalCheck(){
+  if (lives <= 0 || selectedPos===null) return;
+  const q = QUESTIONS[selectedPos]; if (!q || answered.has(selectedPos)) return;
 
-  if (q.qtype === 'mcq'){
-    const i = [...modalMCQ.children].findIndex(b=> b.classList.contains('sel'));
-    if (i<0) return;
-    const letter = ['A','B','C','D'][i];
-    ok = (letter.toUpperCase() === (q.correct||'').toUpperCase());
-
-    [...modalMCQ.children].forEach((btn,idx)=>{
-      btn.disabled = true;
-      if (!ok && idx===i) btn.classList.add('wrong');
-      if (['A','B','C','D'][idx].toUpperCase() === (q.correct||'').toUpperCase()) btn.classList.add('correct');
-      if (idx!==i && ['A','B','C','D'][idx].toUpperCase() !== (q.correct||'').toUpperCase()) btn.classList.add('opacity-50');
-    });
-
-  } else if (q.qtype === 'short'){
-    const val = (modalShortInput.value || '').trim(); if (!val) return;
-    ok = normalize(val) === normalize(q.correct||'');
-
-  } else { // long
-    const txt = (modalLongInput.value || '').trim(); if (!txt) return;
-    const req = requiredWords(q);
-    const missing = req.filter(w => !containsWord(txt, w));
-    const tokenCount = txt.split(/\s+/).filter(Boolean).length;
-    const minLen = Math.max(6, req.length + 2);
-    ok = (missing.length === 0) && (tokenCount >= minLen);
-
-    if (!ok){
-      const missHtml = missing.length ? `<div class="small mt-1">Missing: <code>${missing.join('</code>, <code>')}</code></div>` : '';
-      const lenHtml = tokenCount < minLen ? `<div class="small mt-1">Write at least ${minLen} words (you wrote ${tokenCount}).</div>` : '';
-      modalFeedback.innerHTML = `<div class="alert alert-danger mb-0">Not quite. ${missHtml}${lenHtml}</div>`;
+  // Confidence requirement if block is shown
+  const willAskConf = askConfidenceMap.get(selectedPos) && confBlock.style.display !== 'none';
+  let confVal = null;
+  if (willAskConf){
+    confVal = confidenceValue.get(selectedPos) || null;
+    if (confVal === null){
+      // require a selection before allowing submit
+      modalFeedback.innerHTML = `<div class="alert alert-warning mb-2">Please select your confidence (1–5) before checking.</div>`;
+      return;
     }
   }
 
+  // Gather user's response (server decides correctness & awards XP)
+  let responsePayload = '';
+  let selectedIndex = -1;
+
+  if (q.qtype === 'mcq'){
+    selectedIndex = [...modalMCQ.children].findIndex(b=> b.classList.contains('sel'));
+    if (selectedIndex<0) return; // nothing selected
+    responsePayload = ['A','B','C','D'][selectedIndex];
+    [...modalMCQ.children].forEach(btn => btn.disabled = true);
+  } else if (q.qtype === 'short'){
+    const val = (modalShortInput.value || '').trim(); if (!val) return;
+    responsePayload = val;
+  } else { // long
+    const txt = (modalLongInput.value || '').trim(); if (!txt) return;
+    responsePayload = txt;
+  }
+
+  // Submit to server with confidence (if any)
+  const { ok, data } = await submitAnswerToServer(q.id, responsePayload, typeof confVal==='number' ? confVal : undefined);
+
+  // Mark answered to prevent resubmits
   answered.add(selectedPos);
 
-  if (ok){
+  // Determine correctness
+  let wasCorrect = false;
+  if (data){
+    if (typeof data.was_correct === 'boolean') {
+      wasCorrect = data.was_correct;
+    } else if (typeof data.correct === 'boolean') {
+      wasCorrect = data.correct;
+    } else if (Array.isArray(data.correct)) {
+      wasCorrect = data.correct.includes(selectedPos);
+    }
+  }
+
+  // Visualize MCQ correctness
+  if (q.qtype === 'mcq'){
+    [...modalMCQ.children].forEach((btn, idx)=>{
+      const letter = ['A','B','C','D'][idx];
+      btn.classList.remove('sel');
+      if (wasCorrect){
+        if (idx === selectedIndex) btn.classList.add('correct');
+        else btn.classList.add('opacity-50');
+      } else {
+        if (idx === selectedIndex) btn.classList.add('wrong');
+        if (letter.toUpperCase() === String(q.correct||'').toUpperCase()){
+          btn.classList.add('correct');
+        }
+      }
+    });
+  }
+
+  // Standard feedback
+  if (wasCorrect){
     correct.add(selectedPos);
-    xp += 10;
-    modalFeedback.innerHTML = `<div class="alert alert-success mb-0">Correct! +10 XP</div>`;
+    if (!modalFeedback.innerHTML){
+      modalFeedback.innerHTML = `<div class="alert alert-success mb-0">Correct! +10 XP</div>`;
+    }
     awardLinesIfAny();
-    setFooter('solved');  // swap to Close, keep modal open
+    setFooter('solved');
   } else {
-    lives--;
-    modalFeedback.insertAdjacentHTML('afterbegin', `<div class="alert alert-danger mb-2">Wrong. -1 life</div>`);
-    setFooter('locked');  // swap to Close, keep modal open
-    if (lives <= 0){
-      endBoard("Out of lives!");   // show Game Over popup
+    if (!modalFeedback.innerHTML){
+      modalFeedback.insertAdjacentHTML('afterbegin', `<div class="alert alert-danger mb-2">Wrong. -1 life</div>`);
+    }
+    setFooter('locked');
+    if (lives <= 0 || (data && data.game_over)){
+      updateHUD(); renderBoard(); saveState();
+      endBoard("Out of lives!");
       return;
     }
+  }
+
+  // Optional growth feedback (20%) if we have a confidence value
+  if (growthAskedMap.get(selectedPos) && (confidenceValue.get(selectedPos) != null)){
+    const g = growthMessage(confidenceValue.get(selectedPos), wasCorrect);
+    const block = document.createElement('div');
+    block.className = 'explain-block mt-2';
+    block.innerHTML = `<div class="explain-title">Feedback</div><div class="explain-body">${escapeHtml(g)}</div>`;
+    modalExplain.style.display = 'block';
+    modalExplain.appendChild(block);
   }
 
   updateHUD();
@@ -634,27 +802,18 @@ function onModalCheck(){
 function awardLinesIfAny(){
   const newLines = computeCompletedLines(correct);
   let newlyAwarded = 0;
-  newLines.forEach(idx=>{
-    if (!awardedLines.has(idx)){
-      awardedLines.add(idx);
-      newlyAwarded++;
-    }
-  });
+  newLines.forEach(idx=>{ if (!awardedLines.has(idx)){ awardedLines.add(idx); newlyAwarded++; }});
   if (newlyAwarded>0){
-    lines += newlyAwarded;
-    xp += 20 * newlyAwarded;
     showToast();
     shootConfetti(28 + 12*newlyAwarded);
   }
 }
-
 function computeCompletedLines(setCorrect){
   const results = new Set();
   const lineDefs = [];
-  for (let r=0;r<4;r++) lineDefs.push([4*r+0,4*r+1,4*r+2,4*r+3]); // rows
-  for (let c=0;c<4;c++) lineDefs.push([0*4+c,1*4+c,2*4+c,3*4+c]); // cols
-  lineDefs.push([0,5,10,15]);                                     // diag
-  lineDefs.push([3,6,9,12]);                                      // diag
+  for (let r=0;r<4;r++) lineDefs.push([4*r+0,4*r+1,4*r+2,4*r+3]);
+  for (let c=0;c<4;c++) lineDefs.push([0*4+c,1*4+c,2*4+c,3*4+c]);
+  lineDefs.push([0,5,10,15]); lineDefs.push([3,6,9,12]);
   lineDefs.forEach((L, idx)=>{ if (L.every(p=> setCorrect.has(p))) results.add(idx); });
   return results;
 }
@@ -665,20 +824,25 @@ function updateHUD(){
   barFill.style.width = pct + '%';
   progLabel.textContent = `(${answered.size}/${TOTAL} opened)`;
   lifeChip.innerHTML = `<i class="bi bi-heart-fill"></i> Lives ${Math.max(lives,0)}`;
-  xpChip.innerHTML = `<i class="bi bi-stars"></i> XP ${xp}`;
+  xpChip.innerHTML = `<i class="bi bi-stars"></i> Board XP ${xp}`;
   lineChip.innerHTML = `<i class="bi bi-grid-3x3"></i> Lines ${lines}`;
+
+  elProfileLevel.textContent   = PROFILE_LEVEL;
+  elProfileXPNow.textContent   = PROFILE_XP % 100;
+  elProfileXPTotal.textContent = PROFILE_XP;
 
   if (answered.size === TOTAL && finishCard.style.display === 'none'){
     endBoard("All cells opened!");
   }
 }
-
-/* Modified endBoard to use popup when out of lives */
 function endBoard(reason){
   if (reason && reason.toLowerCase().startsWith('out of lives')) {
-    [...document.querySelectorAll('.cell')].forEach(c=> c.classList.add('locked')); // keep locked
+    [...document.querySelectorAll('.cell')].forEach(c=> c.classList.add('locked'));
     try { qModal.hide(); } catch(e){}
-    overStats.textContent = `Solved: ${correct.size}/${TOTAL} • Lines: ${lines} • XP: ${xp}`;
+    if (overStats) { overStats.textContent = `Solved: ${correct.size}/${TOTAL} • Lines: ${lines} • XP: ${xp}`; }
+    if (overSolved) overSolved.textContent = `${correct.size}/${TOTAL}`;
+    if (overLines)  overLines.textContent  = `${lines}`;
+    if (overXP)     overXP.textContent     = `${xp}`;
     overModal.show();
     clearState();
     return;
@@ -686,40 +850,27 @@ function endBoard(reason){
   finishCard.style.display='block';
   finishTitle.textContent = reason || "Board complete!";
   finishStats.textContent = `Solved: ${correct.size}/${TOTAL} • Lines: ${lines} • XP: ${xp}`;
+  finished = true;
   clearState();
 }
 
 /* ========= Toast + Confetti ========= */
-function showToast(){
-  const el = document.getElementById('toastLine');
-  el.style.display='block';
-  setTimeout(()=> el.style.display='none', 1500);
-}
-function showResumeToast(){
-  resumeToast.style.display='block';
-  setTimeout(()=> resumeToast.style.display='none', 1400);
-}
+function showToast(){ const el = document.getElementById('toastLine'); el.style.display='block'; setTimeout(()=> el.style.display='none', 1500); }
+function showResumeToast(){ resumeToast.style.display='block'; setTimeout(()=> resumeToast.style.display='none', 1400); }
 function shootConfetti(n=30){
   const colors = ['#60a5fa','#a78bfa','#f59e0b','#22c55e','#e879f9','#38bdf8'];
   for (let i=0;i<n;i++){
-    const p = document.createElement('div');
-    p.className = 'confetti';
+    const p = document.createElement('div'); p.className = 'confetti';
     const size = 6 + Math.random()*10;
-    p.style.width = size+'px';
-    p.style.height = (size*1.4)+'px';
+    p.style.width = size+'px'; p.style.height = (size*1.4)+'px';
     p.style.left = (Math.random()*100)+'vw';
     p.style.background = colors[Math.floor(Math.random()*colors.length)];
-    p.style.transform = `rotate(${Math.random()*360}deg)`;
-    p.style.opacity = 0.9;
+    p.style.transform = `rotate(${Math.random()*360}deg)`; p.style.opacity = 0.9;
     document.body.appendChild(p);
-
-    const fall = 800 + Math.random()*900;
-    const xdrift = (Math.random()*2-1)*120;
-    p.animate([
-      { transform:`translate(0,0) rotate(0deg)`, opacity:1 },
-      { transform:`translate(${xdrift}px, ${window.innerHeight+80}px) rotate(720deg)`, opacity:0.9 }
-    ], { duration: fall, easing:'cubic-bezier(.2,.7,.2,1)' });
-
+    const fall = 800 + Math.random()*900; const xdrift = (Math.random()*2-1)*120;
+    p.animate([{ transform:`translate(0,0) rotate(0deg)`, opacity:1 },
+               { transform:`translate(${xdrift}px, ${window.innerHeight+80}px) rotate(720deg)`, opacity:0.9 }],
+               { duration: fall, easing:'cubic-bezier(.2,.7,.2,1)' });
     setTimeout(()=> p.remove(), fall);
   }
 }
@@ -741,23 +892,44 @@ function setFooter(mode){
   modalCheckBtn.disabled = false;
 }
 
+/* ========= Leave-toast on backdrop click ========= */
+let lastLeaveToast = 0;
+function showLeaveToast(){
+  const now = Date.now();
+  if (now - lastLeaveToast < 1200) return;
+  lastLeaveToast = now;
+  if (!leaveToast) return;
+  leaveToast.style.display = 'block';
+  leaveToast.style.animation = 'slideUpFade .22s ease-out';
+  clearTimeout(showLeaveToast._t1); clearTimeout(showLeaveToast._t2);
+  showLeaveToast._t1 = setTimeout(()=>{ leaveToast.style.animation = 'fadeOut .6s ease-in forwards'; }, 1000);
+  showLeaveToast._t2 = setTimeout(()=>{ leaveToast.style.display = 'none'; leaveToast.style.animation = ''; }, 1600);
+}
+document.addEventListener("click", (e) => {
+  const isModalOpen = qModalEl.classList.contains("show");
+  if (!isModalOpen) return;
+  const modalContent = qModalEl.querySelector(".modal-content"); if (!modalContent) return;
+  const clickedInsideContent = modalContent.contains(e.target);
+  const clickedBackdrop     = qModalEl.contains(e.target) && !clickedInsideContent;
+  if (clickedBackdrop && isBoardActive()) { showLeaveToast(); }
+});
+
+/* ========= Level Up Trigger ========= */
+function triggerLevelUp(newLevel, totalXP){
+  LAST_LEVEL = newLevel; LAST_XP = totalXP;
+  updateHUD();
+  levelUpNumber.textContent = `Lv ${newLevel}`;
+  levelUpXP.textContent = totalXP;
+  shootConfetti(90);
+  levelUpModal.show();
+}
+
 /* ========= Start ========= */
 (function init(){
   const hadState = loadState();
-
-  // NEW: if we restored to a dead board, lock & show Game Over immediately
-  if (lives <= 0) {
-    renderBoard();
-    updateHUD();
-    endBoard("Out of lives!");
-    return;
-  }
-
-  renderBoard();
-  updateHUD();
+  if (lives <= 0) { renderBoard(); updateHUD(); endBoard("Out of lives!"); return; }
+  renderBoard(); updateHUD();
   if (hadState && (answered.size>0 || correct.size>0)) showResumeToast();
-
-  // Save often & safely
   window.addEventListener('beforeunload', saveState);
 })();
 </script>
