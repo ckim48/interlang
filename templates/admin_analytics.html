@@ -1,15 +1,15 @@
-<!-- templates/admin_analytics.html -->
 <!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
-<title>Admin • Analytics</title>
+<title>Admin • Student Analytics</title>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <style>
 :root{
-  --ink:#0e1b35; --muted:#4b5567; --bg:#ffffff;
+  --ink:#0e1b35; --muted:#4b5567; --bg:#ffffff; --ring:#e6ecff;
+  --accent:#7aa4ff; --accent-2:#b3c9ff; --ok:#16a34a;
 }
 body{
   color:var(--ink); background:var(--bg);
@@ -20,124 +20,199 @@ body{
     radial-gradient(30vmax 30vmax at 10% 90%, #f7faff 0%, transparent 70%);
   background-attachment: fixed;
 }
-.page-head{ background:linear-gradient(180deg,#fff,#f7faff); border:1px solid #e6ecff; border-radius:20px; padding:18px; box-shadow:0 14px 36px rgba(13,31,64,.08) }
-.cardy{ border:1px solid #e6ecff; background:linear-gradient(180deg,#fff,#f7faff); border-radius:16px; box-shadow:0 10px 28px rgba(13,31,64,.06) }
+.container{ max-width:1100px }
+
+/* ===== Header card ===== */
+.page-head{
+  background:linear-gradient(180deg,#ffffff,#f8faff);
+  border:1px solid var(--ring); border-radius:22px; padding:18px;
+  box-shadow:0 18px 44px rgba(13,31,64,.08);
+  position:relative; overflow:hidden;
+}
+.page-head::after{
+  content:""; position:absolute; left:18px; right:18px; bottom:-1px; height:2px;
+  background:linear-gradient(90deg,transparent,#b3d1ff,#ffdca8,transparent);
+  opacity:.9; border-radius:2px;
+}
+
+/* Title area */
+.h-title{
+  margin:0;
+  font-weight:900; letter-spacing:.2px; line-height:1.15;
+  font-size:clamp(20px,2.8vw,24px);
+  background:linear-gradient(90deg,#1b2e5a,#3a64f0,#7aa4ff);
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+}
+.subtle{ color:var(--muted) }
+
+/* Context chips */
+.pill{
+  display:inline-flex; align-items:center; gap:.45rem;
+  background:#fff; color:#24345a; font-weight:800;
+  border:1px solid #ecf1ff; border-radius:999px;
+  padding:.38rem .8rem; box-shadow:0 8px 22px rgba(20,40,100,.06);
+}
+
+/* ===== Fancy user picker ===== */
+.picker{
+  display:flex; align-items:center; gap:.6rem; flex-wrap:wrap;
+}
+.select-wrap{
+  position:relative; min-width:260px;
+}
+.select-wrap .bi{
+  position:absolute; left:12px; top:50%; transform:translateY(-50%);
+  color:#5b6aa0; pointer-events:none;
+}
+.select-wrap .form-select{
+  padding-left:2.2rem;
+  border-radius:14px;
+  border:1px solid #e3ebff;
+  background:linear-gradient(180deg,#ffffff,#f9fbff);
+  box-shadow:0 10px 26px rgba(18,32,68,.08);
+  font-weight:700; color:#223357;
+}
+.select-wrap .form-select:focus{
+  border-color:#cfe0ff; box-shadow:0 0 0 4px #e9f1ff;
+}
+.picker .hint{
+  font-size:.85rem; color:#6a769a; font-weight:600;
+}
+
+/* Buttons next to picker */
+.picker .btn-ghost{
+  border:1px dashed #e3ebff; color:#2b3d6e; font-weight:800;
+  background:#fff; border-radius:12px; padding:.5rem .9rem;
+}
+.picker .btn-ghost:hover{ background:#f7faff }
+
+/* ===== Cards / charts ===== */
+.cardy{ border:1px solid var(--ring); background:linear-gradient(180deg,#fff,#f7faff); border-radius:16px; box-shadow:0 10px 28px rgba(13,31,64,.06) }
 .dim{color:var(--muted)}
 .kpi{font-weight:800; letter-spacing:.2px;}
-
-/* --- Chart sizing helpers --- */
-.chart-box{
-  position:relative;
-  width:100%;
-  height:300px;         /* uniform height for all charts */
-}
-.chart-box.tall{ height:340px; }   /* donut looks nicer slightly larger */
-.chart-box.short{ height:260px; }  /* KPIs if you ever add sparklines */
-
-@media (min-width: 992px){
-  .chart-box{ height:320px; }
-  .chart-box.tall{ height:360px; }
-}
+.chart-box{ position:relative; width:100%; height:320px; }
+.chart-box.tall{ height:360px; }
+.badge-soft{ background:#eef3ff; color:#4360d9; border-radius:8px; }
+#loadState{ display:none; }
+#inlineErr{ display:none; }
 </style>
 </head>
 <body>
   {% include 'nav.html' %}
 
   <div class="container pb-5 mt-4">
+
+    <!-- ===== Header ===== -->
     <div class="page-head mb-3">
-      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
         <div>
-          <h1 class="h4 mb-1 kpi">Admin Analytics</h1>
-          <div class="dim">Last 14 days • Attempts / Accuracy / DAU • Levels • Activity • XP</div>
+          <h1 class="h-title">Admin • Student Analytics</h1>
+          <div class="d-flex align-items-center gap-2 flex-wrap mt-2">
+            <span class="pill"><i class="bi bi-speedometer2"></i> Overview</span>
+            <span class="pill"><i class="bi bi-graph-up-arrow"></i> Live Charts</span>
+          </div>
+          <div id="pageSubtitle" class="subtle mt-2">Per-student progress across quizzes, worksheets, stories, and XP</div>
         </div>
+
+        <div class="picker">
+          <div class="select-wrap">
+            <i class="bi bi-person"></i>
+            <label for="userSelect" class="visually-hidden">Select a student</label>
+            <select id="userSelect" class="form-select" {% if users|length==0 %}disabled{% endif %}>
+              {% if users|length==0 %}
+                <option value="">No users yet</option>
+              {% else %}
+                {% for uname in users %}
+                  <option value="{{ uname }}" {% if uname==selected_user %}selected{% endif %}>{{ uname }}</option>
+                {% endfor %}
+              {% endif %}
+            </select>
+          </div>
+          <button type="button" id="btnReload" class="btn btn-ghost">
+            <i class="bi bi-arrow-clockwise"></i> Reload
+          </button>
+          <div id="loadState" class="text-secondary small">Loading…</div>
+          <div class="w-100"></div>
+          <div class="hint">Tip: pick a student to populate all charts below.</div>
+        </div>
+      </div>
+
+      <div id="inlineErr" class="alert alert-warning mt-3 mb-0 py-2 px-3 small">
+        Couldn’t load analytics for the selected user. Please try again or check the data API.
       </div>
     </div>
 
-    <!-- Top KPIs (mock) -->
+    <!-- ===== KPIs ===== -->
     <div class="row g-3 mb-3">
-      <div class="col-md-4">
+      <div class="col-md-3">
         <div class="cardy p-3 h-100">
-          <div class="small dim">Total Attempts</div>
-          <div class="h3 mb-0" id="kAttempts">—</div>
+          <div class="small dim">Total Quizzes</div>
+          <div class="h3 mb-0" id="kQuizzes">—</div>
         </div>
       </div>
-      <div class="col-md-4">
-        <div class="cardy p-3 h-100">
-          <div class="small dim">Total Correct</div>
-          <div class="h3 mb-0" id="kCorrect">—</div>
-        </div>
-      </div>
-      <div class="col-md-4">
+      <div class="col-md-3">
         <div class="cardy p-3 h-100">
           <div class="small dim">Overall Accuracy</div>
-          <div class="h3 mb-0"><span id="kAcc">—</span> <span class="h6 dim">%</span></div>
+          <div class="h3 mb-0"><span id="kAcc">—</span><span class="h6 dim"> %</span></div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="cardy p-3 h-100">
+          <div class="small dim">Stories Read</div>
+          <div class="h3 mb-0" id="kStories">—</div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="cardy p-3 h-100">
+          <div class="small dim">Total XP</div>
+          <div class="h3 mb-0" id="kXP">—</div>
         </div>
       </div>
     </div>
 
-    <!-- Row 1 -->
+    <!-- ===== Charts ===== -->
     <div class="row g-3 mb-3">
-      <div class="col-lg-4">
+      <div class="col-lg-6">
         <div class="cardy p-3 h-100">
-          <div class="fw-bold mb-2">Attempts / Day</div>
-          <div class="chart-box"><canvas id="cAttempts"></canvas></div>
+          <div class="fw-bold mb-2">1) Quiz Attempts & Accuracy (last 30 days)</div>
+          <div class="chart-box"><canvas id="cAttemptsAcc"></canvas></div>
         </div>
       </div>
-      <div class="col-lg-4">
+      <div class="col-lg-6">
         <div class="cardy p-3 h-100">
-          <div class="fw-bold mb-2">Accuracy / Day</div>
-          <div class="chart-box"><canvas id="cAccuracy"></canvas></div>
-        </div>
-      </div>
-      <div class="col-lg-4">
-        <div class="cardy p-3 h-100">
-          <div class="fw-bold mb-2">Daily Active Users</div>
-          <div class="chart-box"><canvas id="cDAU"></canvas></div>
+          <div class="fw-bold mb-2">2) Quiz Accuracy by Level</div>
+          <div class="chart-box"><canvas id="cAccByLevel"></canvas></div>
         </div>
       </div>
     </div>
 
-    <!-- Row 2 -->
     <div class="row g-3 mb-3">
-      <div class="col-lg-4">
+      <div class="col-lg-6">
         <div class="cardy p-3 h-100">
-          <div class="fw-bold mb-2">Activity Split</div>
-          <div class="chart-box tall"><canvas id="cActivity"></canvas></div>
+          <div class="fw-bold mb-2">3) Worksheet Progress (Weeks Unlocked vs Submitted)</div>
+          <div class="chart-box"><canvas id="cWorksheets"></canvas></div>
+          <div class="small dim mt-1">Shows current 4-week cycle status for this user.</div>
         </div>
       </div>
-      <div class="col-lg-4">
+      <div class="col-lg-6">
         <div class="cardy p-3 h-100">
-          <div class="fw-bold mb-2">Users by Level</div>
-          <div class="chart-box"><canvas id="cLevels"></canvas></div>
-        </div>
-      </div>
-      <div class="col-lg-4">
-        <div class="cardy p-3 h-100">
-          <div class="fw-bold mb-2">Accuracy by Level</div>
-          <div class="chart-box"><canvas id="cAccLvl"></canvas></div>
+          <div class="fw-bold mb-2">4) Stories Read Over Time</div>
+          <div class="chart-box"><canvas id="cStories"></canvas></div>
         </div>
       </div>
     </div>
 
-    <!-- Row 3 -->
     <div class="row g-3 mb-4">
-      <div class="col-lg-4">
+      <div class="col-lg-6">
         <div class="cardy p-3 h-100">
-          <div class="fw-bold mb-2">Top Students (Attempts)</div>
-          <div class="chart-box"><canvas id="cTopUsers"></canvas></div>
-        </div>
-      </div>
-      <div class="col-lg-4">
-        <div class="cardy p-3 h-100">
-          <div class="fw-bold mb-2">XP Buckets</div>
+          <div class="fw-bold mb-2">5) XP Growth (cumulative)</div>
           <div class="chart-box"><canvas id="cXP"></canvas></div>
         </div>
       </div>
-      <div class="col-lg-4">
+      <div class="col-lg-6">
         <div class="cardy p-3 h-100">
-          <div class="fw-bold mb-2">Confidence Calibration</div>
-          <div class="chart-box"><canvas id="cConf"></canvas></div>
-          <div class="small dim mt-2">Mock data shown below; will reflect real submissions once available.</div>
+          <div class="fw-bold mb-2">6) Activity Mix</div>
+          <div class="chart-box tall"><canvas id="cActivity"></canvas></div>
         </div>
       </div>
     </div>
@@ -145,139 +220,138 @@ body{
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
-/* ---------- Palette ---------- */
 const PALETTE = [
   'rgba(99,102,241,0.7)','rgba(16,185,129,0.7)','rgba(236,72,153,0.7)',
   'rgba(234,179,8,0.7)','rgba(59,130,246,0.7)','rgba(168,85,247,0.7)',
   'rgba(239,68,68,0.7)','rgba(20,184,166,0.7)','rgba(245,158,11,0.7)'
 ];
 const BORDER = PALETTE.map(c=>c.replace('0.7','1'));
-const baseOpts = { responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false} } };
 const pct = x => Math.round((x||0)*100);
 
-/* ---------- Mock data (14 days) ---------- */
-function lastNDates(n){
-  const out=[]; const today=new Date();
-  for(let i=n-1;i>=0;i--){
-    const d=new Date(today); d.setDate(today.getDate()-i);
-    out.push(d.toLocaleDateString(undefined,{month:'numeric',day:'numeric'}));
-  }
-  return out;
-}
-const DATES = lastNDates(14);
+const charts = {};
+const userSelect = document.getElementById('userSelect');
+const loadState  = document.getElementById('loadState');
+const inlineErr  = document.getElementById('inlineErr');
+const pageSubtitle = document.getElementById('pageSubtitle');
+const btnReload = document.getElementById('btnReload');
 
-// Attempts ~50–140, Accuracy ~50–90%, DAU ~10–40
-const MOCK = {
-  summary: { total_attempts: 1523, total_corrects: 1040, overall_accuracy: 0.683 },
-  timeseries: {
-    attempts: [62,81,74,95,120,88,67,104,136,128,92,78,110,108],
-    accuracy: [0.62,0.58,0.64,0.66,0.72,0.69,0.63,0.7,0.76,0.73,0.68,0.65,0.71,0.74],
-    dau:      [18,22,19,26,31,24,20,28,36,33,25,21,29,32]
-  },
-  activity_mix: { attempts: 1523, story_reads: 430, vocab_new: 280 },
-  levels: {
-    labels: ['1','2','3','4','5','6','7','8'],
-    counts: [4,7,9,12,10,8,5,3],
-    acc_labels: ['1','2','3','4','5','6','7','8'],
-    acc_values: [0.55,0.58,0.61,0.66,0.69,0.72,0.75,0.78]
-  },
-  top_students: [
-    {username:'alex', attempts: 168},
-    {username:'mina', attempts: 154},
-    {username:'ryu',  attempts: 141},
-    {username:'sara', attempts: 128},
-    {username:'testtest', attempts: 119},
-    {username:'quinn', attempts: 112},
-  ],
-  xp_histogram: {
-    labels: ['0–199','200–399','400–599','600–799','800–999','1000+'],
-    counts: [3,7,11,9,6,4]
-  },
-  confidence: {
-    buckets: ['1','2','3','4','5'],
-    attempts: [95,180,420,360,240],
-    accuracy: [0.42,0.51,0.62,0.74,0.83]
-  }
-};
+function setLoading(on){ loadState.style.display = on ? 'inline-block' : 'none'; }
+function showErr(on){ inlineErr.style.display = on ? 'block' : 'none'; }
 
-/* ---------- Fill KPIs ---------- */
-document.getElementById('kAttempts').textContent = MOCK.summary.total_attempts;
-document.getElementById('kCorrect').textContent  = MOCK.summary.total_corrects;
-document.getElementById('kAcc').textContent      = pct(MOCK.summary.overall_accuracy);
+function renderAll(data){
+  // KPIs
+  document.getElementById('kQuizzes').textContent = data.kpis?.total_quizzes ?? '0';
+  document.getElementById('kAcc').textContent     = pct(data.kpis?.overall_accuracy ?? 0);
+  document.getElementById('kStories').textContent = data.kpis?.stories_read ?? '0';
+  document.getElementById('kXP').textContent      = data.kpis?.total_xp ?? '0';
 
-/* ---------- Charts ---------- */
-new Chart(document.getElementById('cAttempts'), {
-  type: 'bar',
-  data: { labels: DATES, datasets: [{ label:'Attempts', data: MOCK.timeseries.attempts, backgroundColor: PALETTE[0] }]},
-  options: { ...baseOpts, scales:{ y:{ beginAtZero:true, ticks:{precision:0} } } }
-});
+  // Destroy old charts
+  Object.values(charts).forEach(ch => ch && ch.destroy());
 
-new Chart(document.getElementById('cAccuracy'), {
-  type: 'line',
-  data: { labels: DATES, datasets: [{ label:'Accuracy %', data: MOCK.timeseries.accuracy.map(p=>pct(p)), borderColor: BORDER[2], backgroundColor: PALETTE[2], tension:.28, fill:false }]},
-  options: { ...baseOpts, scales:{ y:{ beginAtZero:true, max:100, ticks:{ callback:v=>v+'%' } } } }
-});
-
-new Chart(document.getElementById('cDAU'), {
-  type: 'line',
-  data: { labels: DATES, datasets: [{ label:'DAU', data: MOCK.timeseries.dau, borderColor: BORDER[1], backgroundColor: PALETTE[1], tension:.28, fill:true }]},
-  options: { ...baseOpts, scales:{ y:{ beginAtZero:true, ticks:{precision:0} } } }
-});
-
-new Chart(document.getElementById('cActivity'), {
-  type: 'doughnut',
-  data: {
-    labels: ['Attempts','Story Reads','New Vocab'],
-    datasets: [{ data: [MOCK.activity_mix.attempts, MOCK.activity_mix.story_reads, MOCK.activity_mix.vocab_new],
-                 backgroundColor: [PALETTE[4], PALETTE[1], PALETTE[2]] }]
-  },
-  options: { ...baseOpts, plugins:{ legend:{ position:'bottom' } }, cutout:'55%' }
-});
-
-new Chart(document.getElementById('cLevels'), {
-  type: 'bar',
-  data: { labels: MOCK.levels.labels, datasets: [{ label:'Users', data: MOCK.levels.counts, backgroundColor: PALETTE }]},
-  options: { ...baseOpts, scales:{ y:{ beginAtZero:true, ticks:{precision:0} } } }
-});
-
-new Chart(document.getElementById('cAccLvl'), {
-  type: 'bar',
-  data: { labels: MOCK.levels.acc_labels, datasets: [{ label:'Accuracy %', data: MOCK.levels.acc_values.map(p=>pct(p)), backgroundColor: PALETTE }]},
-  options: { ...baseOpts, scales:{ y:{ beginAtZero:true, max:100, ticks:{callback:v=>v+'%'} } } }
-});
-
-const tuLabels = MOCK.top_students.map(x=>x.username);
-const tuAttempts = MOCK.top_students.map(x=>x.attempts);
-new Chart(document.getElementById('cTopUsers'), {
-  type: 'bar',
-  data: { labels: tuLabels, datasets: [{ label:'Attempts', data: tuAttempts, backgroundColor: PALETTE }]},
-  options: { ...baseOpts, scales:{ y:{ beginAtZero:true, ticks:{precision:0} } } }
-});
-
-new Chart(document.getElementById('cXP'), {
-  type: 'bar',
-  data: { labels: MOCK.xp_histogram.labels, datasets: [{ label:'Users', data: MOCK.xp_histogram.counts, backgroundColor: PALETTE }]},
-  options: { ...baseOpts, scales:{ y:{ beginAtZero:true, ticks:{precision:0} } } }
-});
-
-new Chart(document.getElementById('cConf'), {
-  type: 'bar',
-  data: {
-    labels: MOCK.confidence.buckets,
-    datasets: [
-      { type:'bar',  label:'Attempts', data: MOCK.confidence.attempts, backgroundColor: PALETTE[4] },
-      { type:'line', label:'Accuracy %', data: MOCK.confidence.accuracy.map(p=>pct(p)), borderColor: BORDER[5], backgroundColor: PALETTE[5], tension:.28, yAxisID:'y1', fill:false }
-    ]
-  },
-  options: {
-    ...baseOpts,
-    plugins:{ legend:{ position:'bottom' } },
-    scales:{
-      y:  { beginAtZero:true, ticks:{precision:0} },
-      y1: { position:'right', beginAtZero:true, max:100, ticks:{ callback:v=>v+'%'} }
+  charts.attemptsAcc = new Chart(document.getElementById('cAttemptsAcc'), {
+    type: 'bar',
+    data: {
+      labels: data.timeseries.labels,
+      datasets: [
+        { type:'bar',  label:'Attempts', data: data.timeseries.attempts, backgroundColor: PALETTE[0], yAxisID:'y' },
+        { type:'line', label:'Accuracy %', data: data.timeseries.accuracy.map(p=>pct(p)), borderColor: BORDER[2], backgroundColor: PALETTE[2], tension:.28, yAxisID:'y1', fill:false }
+      ]
+    },
+    options: { responsive:true, maintainAspectRatio:false,
+      scales:{ y:{beginAtZero:true,ticks:{precision:0}}, y1:{position:'right',beginAtZero:true,max:100,ticks:{callback:v=>v+'%'}} },
+      plugins:{ legend:{ position:'bottom' } }
     }
+  });
+
+  charts.accByLevel = new Chart(document.getElementById('cAccByLevel'), {
+    type: 'bar',
+    data: { labels: data.acc_by_level.labels, datasets: [{ label:'Accuracy %', data: data.acc_by_level.values.map(p=>pct(p)), backgroundColor: PALETTE }]},
+    options: { responsive:true, maintainAspectRatio:false, scales:{ y:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%'}} } }
+  });
+
+  charts.worksheets = new Chart(document.getElementById('cWorksheets'), {
+    type: 'bar',
+    data: {
+      labels: data.worksheets.labels,
+      datasets: [
+        { label:'Unlocked', data: data.worksheets.unlocked, backgroundColor: PALETTE[4] },
+        { label:'Submitted', data: data.worksheets.submitted, backgroundColor: PALETTE[6] }
+      ]
+    },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'bottom'} }, scales:{ y:{beginAtZero:true,ticks:{precision:0}} } }
+  });
+
+  charts.stories = new Chart(document.getElementById('cStories'), {
+    type: 'line',
+    data: { labels: data.stories.labels, datasets: [{ label:'Stories', data: data.stories.counts, borderColor: BORDER[1], backgroundColor: PALETTE[1], tension:.28, fill:true }]},
+    options: { responsive:true, maintainAspectRatio:false, scales:{ y:{beginAtZero:true,ticks:{precision:0}} } }
+  });
+
+  charts.xp = new Chart(document.getElementById('cXP'), {
+    type: 'line',
+    data: { labels: data.xp.labels, datasets: [{ label:'Cumulative XP', data: data.xp.values, borderColor: BORDER[5], backgroundColor: PALETTE[5], tension:.28, fill:true }]},
+    options: { responsive:true, maintainAspectRatio:false, scales:{ y:{beginAtZero:true,ticks:{precision:0}} } }
+  });
+
+  charts.activity = new Chart(document.getElementById('cActivity'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Quiz Attempts','Stories Read','New Vocab'],
+      datasets: [{ data: [data.kpis.total_attempts, data.kpis.stories_read, data.kpis.vocab_new], backgroundColor:[PALETTE[0],PALETTE[1],PALETTE[2]] }]
+    },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'bottom'} }, cutout:'55%' }
+  });
+}
+
+function mockPayload(){
+  const labels14 = Array.from({length:14},(_,i)=>`D${i+1}`);
+  return {
+    kpis:{ total_quizzes:0, overall_accuracy:0, stories_read:0, total_xp:0, total_attempts:0, vocab_new:0 },
+    timeseries:{ labels:labels14, attempts:Array(14).fill(0), accuracy:Array(14).fill(0) },
+    acc_by_level:{ labels:["A1","A2","B1","B2"], values:[0,0,0,0] },
+    worksheets:{ labels:["W1","W2","W3","W4"], unlocked:[0,0,0,0], submitted:[0,0,0,0] },
+    stories:{ labels:labels14, counts:Array(14).fill(0) },
+    xp:{ labels:labels14, values:Array(14).fill(0) }
+  };
+}
+
+// debounce
+let debounceTimer = null;
+function scheduleLoad(){ clearTimeout(debounceTimer); debounceTimer = setTimeout(loadUser, 120); }
+
+async function loadUser(){
+  if (!userSelect || userSelect.options.length === 0 || userSelect.disabled) return;
+  const u = (userSelect.value || "").trim();
+  if (!u) return;
+
+  setLoading(true); showErr(false);
+  try{
+    const r = await fetch(`/admin/analytics/data?username=${encodeURIComponent(u)}`);
+    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+    const j = await r.json();
+    renderAll(j);
+    pageSubtitle.textContent = `Analytics for “${u}”`;
+  }catch(err){
+    console.error(err);
+    showErr(true);
+  }finally{
+    setLoading(false);
   }
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  if (!userSelect || userSelect.options.length === 0 || userSelect.disabled) {
+    // Empty state: render mock charts and show hint
+    renderAll(mockPayload());
+    pageSubtitle.textContent = 'No users yet. Create a user or add data to see analytics.';
+    setLoading(false);
+    return;
+  }
+  loadUser();
 });
+
+userSelect?.addEventListener('change', scheduleLoad);
+btnReload?.addEventListener('click', scheduleLoad);
 </script>
 </body>
 </html>

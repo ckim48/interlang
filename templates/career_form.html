@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Career Worksheet • New</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+
+
+<style>
+:root{
+  --ink:#2a2a2a;
+  --muted:#6e7494;
+  --bg:#ffffff;
+
+  --bg-wash-1:#fff7f1; /* peach */
+  --bg-wash-2:#f0f7ff; /* sky */
+  --bg-wash-3:#f7fff6; /* mint */
+
+  --paper:#fffdf5;
+  --paper-br:#f2eede;
+
+  --brand:#ff8db3;   /* strawberry */
+  --brand-2:#7acbff; /* blue */
+  --brand-3:#7ee0a8; /* mint */
+  --brand-4:#ffd86b; /* sunshine */
+
+  --ring:#ffdca8;
+}
+
+/* Background */
+body{
+      font-family: Nunito, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  color:var(--ink);
+  background:
+    radial-gradient(60vmax 40vmax at 8% 0%, var(--bg-wash-2) 0%, transparent 65%),
+    radial-gradient(60vmax 40vmax at 92% 4%, var(--bg-wash-1) 0%, transparent 65%),
+    radial-gradient(36vmax 28vmax at 50% 100%, var(--bg-wash-3) 0%, transparent 70%),
+    #fff;
+  background-attachment: fixed;
+  padding-bottom: 60px;
+}
+
+/* Sticky container for the included nav */
+.nav-shell{
+  position: sticky;
+  top: 0;
+  z-index: 1040; /* above cards */
+}
+
+/* ===== Match Achievements navbar look ===== */
+.navbar{
+  background: linear-gradient(180deg,#ffffff,#fbfcff);
+  border:1px solid #f0f2fb;
+  border-radius:16px;
+  box-shadow:0 12px 32px rgba(52,90,160,.10);
+  padding-block:.4rem;
+  margin-block:0;           /* remove top/bottom margins to keep sticky reliable */
+  backdrop-filter:saturate(1.2) blur(2px);
+}
+.navbar .nav-link,
+.navbar .navbar-brand{
+  font-weight:800;
+  color:#1f2b46 !important;
+  font-family: Fredoka, Nunito, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+}
+.navbar .nav-link.active{
+  border-radius:999px;
+  background:#fff;
+  border:1px solid #f0f2fb;
+  padding:.3rem .75rem;
+}
+.navbar .btn{
+  border-radius:12px;
+  border:1px dashed var(--ring);
+  font-weight:800;
+}
+
+/* Heading */
+.page-title{
+  font-family:Fredoka;
+  font-weight:900;
+  letter-spacing:.3px;
+  color:#1f2b46;
+  font-size:clamp(24px,3vw,30px);
+}
+
+/* Subtext */
+.page-sub{
+  color:var(--muted);
+  font-size:1rem;
+}
+
+/* Card */
+.form-card{
+  border:1px solid #f0f2fb;
+  background:linear-gradient(180deg,#ffffff,#fbfcff);
+  border-radius:22px;
+  padding:26px 28px;
+  box-shadow:0 16px 44px rgba(52,90,160,.10);
+  margin-top:16px; /* space below sticky nav */
+}
+
+/* Inputs */
+.form-control, .form-select{
+  background:#fff !important;
+  border:1px solid #e6ecff !important;
+  border-radius:14px;
+  padding:.65rem .9rem;
+  box-shadow:0 3px 0 rgba(0,0,0,0.02) inset;
+  font-weight:600;
+}
+.form-control:focus, .form-select:focus{
+  border-color:#cfe2ff !important;
+  box-shadow:0 0 0 .2rem #cfe2ff66 !important;
+}
+
+/* Buttons */
+.btn-fun{
+  border-radius:14px;
+  border:1px solid #ffdca8;
+  background: linear-gradient(180deg,#fff6e7,#ffe8b3);
+  color:#8a5600;
+  font-weight:800;
+  padding:.55rem 1.4rem;
+}
+.btn-fun:hover{
+  background: linear-gradient(180deg,#fff1d1,#ffdf99);
+  color:#7a4e00;
+}
+.btn-fun-outline{
+  border-radius:14px;
+  border:1px dashed #ffdca8;
+  background:#fff;
+  color:#8a5600;
+  font-weight:800;
+  padding:.55rem 1.4rem;
+}
+.btn-fun-outline:hover{
+  background:#fffaf1;
+  border-style:solid;
+}
+
+/* Flash messages */
+.alert{
+  border-radius:14px;
+  font-weight:600;
+}
+</style>
+</head>
+<body>
+
+<!-- Make the included navbar sticky without touching nav.html -->
+<div class="nav-shell">
+  {% include 'nav.html' %}
+</div>
+
+<div class="container" style="max-width:760px;">
+
+  <!-- Heading -->
+  <div class="mb-4 text-center">
+    <h1 class="page-title mt-5">Create a Career Worksheet</h1>
+    <p class="page-sub">Type a job (e.g., police, firefighter, baker, game designer).
+    We’ll make a fun English worksheet for you!</p>
+  </div>
+
+  <!-- Flash messages -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="mb-3">
+        {% for cat, msg in messages %}
+          <div class="alert alert-{{cat}} mb-2">{{ msg }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <!-- Main Card -->
+  <div class="form-card">
+    <form method="post" action="{{ url_for('career') }}">
+      <div class="mb-3">
+        <label class="form-label fw-bold" style="font-family:Fredoka;">Interested Job</label>
+        <input type="text" name="job" class="form-control" placeholder="e.g., police, firefighter, baker" required>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label fw-bold" style="font-family:Fredoka;">English Level</label>
+        <select name="level" class="form-select">
+          <option value="1">Level 1 (very easy)</option>
+          <option value="2" selected>Level 2</option>
+          <option value="3">Level 3</option>
+          <option value="4">Level 4</option>
+          <option value="5">Level 5 (harder)</option>
+        </select>
+      </div>
+
+      <div class="d-flex align-items-center gap-2">
+        <button class="btn-fun" type="submit">
+          <i class="bi bi-wand"></i> Create Worksheet
+        </button>
+        <a class="btn-fun-outline" href="{{ url_for('home') }}">
+          <i class="bi bi-arrow-left"></i> Back
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+
+</body>
+</html>

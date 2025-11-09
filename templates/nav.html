@@ -1,108 +1,190 @@
 {# templates/nav.html #}
 <link rel="icon" href="{{ url_for('static', filename='img/favicon-32.png') }}" sizes="32x32">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" sizes="180x180">
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;800&family=Nunito:wght@400;700;900&display=swap" rel="stylesheet"/>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 
-<nav class="navbar et-nav navbar-expand-md" role="navigation">
- <style>
-  .et-nav{
-   position:sticky;top:0;z-index:10000;
-   background:#fff;
-   border-bottom:1px solid #e6ecff;
-   box-shadow:0 2px 6px rgba(13,31,64,.04);
-  }
-  .et-brand{
-   font-weight:800;letter-spacing:.2px;text-decoration:none;
-   color:#0e1b35!important;
-   display:inline-flex;align-items:center;gap:.5rem;
-  }
-  .et-brand .mark{
-   width:.55rem;height:.55rem;border-radius:999px;background:#0e1b35;
-  }
-  .navbar-nav .nav-link{
-   font-weight:700;color:#2f3b57;
-   border-radius:8px;
-   padding:.45rem .75rem;margin:0 .1rem;
-   transition:background-color .1s ease,color .1s ease;
-  }
-  .navbar-nav .nav-link:hover{
-   background-color:#f6f8ff;
-   color:#0e1b35;
-  }
-  .navbar-nav .nav-link.active{
-   background-color:#eaf1ff;
-   color:#0e1b35;
-   font-weight:800;
-  }
+<nav class="navbar et-nav navbar-expand-md" role="navigation" aria-label="Main">
+    <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;800&family=Nunito:wght@400;700;900&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
-  .navbar-toggler{
-   border:none;background:transparent;color:#223357;
-   font-size:1.25rem;
-  }
-  .navbar-toggler:focus{box-shadow:none}
- </style>
+  <style>
+    /* === Authoritative navbar styles (consistent everywhere) === */
+    :root{
+      --ink:#0e1b35;
+      --muted:#4b5a77;
+      --pill:#f5f8ff;
+      --pill-hover:#e9f1ff;
+      --active:#dbe6ff;
+      --shadow:0 4px 12px rgba(40,60,120,.08);
+    }
 
- {% set ep = (request.endpoint or '') %}
- {% set boards_active = ep in ('home','start_quiz','submit_quiz_instance') %}
- {% set stories_active = ep in ('stories','read_story') %}
- {% set profile_active = ep == 'profile' %}
- {% set ach_active = ep == 'achievements' %}
- {% set admin_active = ep == 'admin_analytics' %}
+    .et-nav{
+      position:sticky; top:0; z-index:10000;
+      background:#ffffff;
+      border-bottom:1px solid #e6ecff;
+      box-shadow:0 2px 10px rgba(13,31,64,.04);
+      /* lock in typography + rhythm so pages can't change it */
+      font-family: Nunito, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.25;
+    }
 
- <div class="container d-flex align-items-center justify-content-between" style="min-height:56px">
-  <a class="et-brand navbar-brand" href="{{ url_for('index') }}">
-   <span>InterLang</span><span class="mark" aria-hidden="true"></span>
-  </a>
+    .et-nav .container{
+      min-height:64px;
+    }
 
-  <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMenu" aria-label="Toggle navigation">
-   <i class="bi bi-list"></i>
-  </button>
+    /* Brand */
+    .et-brand{
+/*      font-family: Fredoka, Nunito, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;*/
+      font-weight:900; letter-spacing:.2px;
+/*      font-size:20px;*/
+      text-decoration:none; color:var(--ink)!important;
+      display:inline-flex; align-items:center; gap:.6rem;
+      padding:.35rem .6rem; font-size:1.2rem;
+    }
+    .et-brand .mark{
+      width:14px; height:14px; border-radius:999px; background:var(--ink);
+    }
 
-  <div class="collapse navbar-collapse justify-content-end" id="navMenu">
-   <ul class="navbar-nav">
+    /* Links */
+    .et-nav .navbar-nav .nav-link{
+      font-family: Nunito, system-ui;
+      font-weight:800; font-size:.95rem;
+      color:#2f3b57 !important;
+      padding:.5rem .9rem; margin:.15rem;
+      border-radius:999px; background:var(--pill);
+      border:1px solid #e6ecff; box-shadow:var(--shadow);
+      display:flex; align-items:center; gap:.45rem;
+      transition: background .15s ease, transform .15s ease;
+    }
+    .et-nav .navbar-nav .nav-link:hover{
+      background:var(--pill-hover); transform:translateY(-1px);
+    }
+    .et-nav .navbar-nav .nav-link.active{
+      background:var(--active); color:var(--ink);
+    }
 
-    <li class="nav-item">
-     <a class="nav-link {% if boards_active %}active{% endif %}" href="{{ url_for('home') }}">
-      Boards
-     </a>
-    </li>
+    /* Dropdown */
+    .et-nav .dropdown-menu{
+      border-radius:14px; border:1px solid #e0e6ff;
+      box-shadow:0 6px 18px rgba(0,0,0,.06); padding:.4rem;
+      font-family: inherit; /* same as bar */
+      font-size:.95rem;
+    }
+    .et-nav .dropdown-item{
+      border-radius:10px; font-weight:700; padding:.45rem .8rem;
+    }
+    .et-nav .dropdown-item:hover{ background:#eef3ff; }
 
-    <li class="nav-item">
-     <a class="nav-link {% if stories_active %}active{% endif %}" href="{{ url_for('stories') }}">
-      Stories
-     </a>
-    </li>
+    /* Toggler */
+    .et-nav .navbar-toggler{
+      border:none; background:transparent; color:#223357; font-size:1.4rem;
+    }
+    .et-nav .navbar-toggler:focus{ box-shadow:none; }
+  </style>
 
-    <li class="nav-item">
-     <a class="nav-link {% if ach_active %}active{% endif %}" href="{{ url_for('achievements') }}">
-      Achievements
-     </a>
-    </li>
+  {% set ep = (request.endpoint or '') %}
+  {% set boards_active  = ep in ('home','start_quiz','submit_quiz_instance') %}
+  {% set stories_active = ep in ('stories','read_story') %}
+  {% set career_active  = ep in ('career','career_view','career_overview','career_latest') %}
+  {% set profile_active = ep == 'profile' %}
+  {% set ach_active     = ep == 'achievements' %}
+  {% set admin_active   = ep == 'admin_analytics_page' %}
 
-    {#  ADMIN SECTION — only visible if username == testtest #}
-    {% if session.get('username') == 'testtest' %}
-    <li class="nav-item">
-     <a class="nav-link {% if admin_active %}active{% endif %}"
-        href="{{ url_for('admin_analytics') }}">
-      Admin
-     </a>
-    </li>
-    {% endif %}
+  <div class="container d-flex align-items-center justify-content-between">
 
-    {% if session.get('username') %}
-     <li class="nav-item">
-      <a class="nav-link {% if profile_active %}active{% endif %}" href="{{ url_for('profile') }}">
-       Profile
-      </a>
-     </li>
-     <li class="nav-item">
-      <a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
-     </li>
-    {% else %}
-     <li class="nav-item">
-      <a class="nav-link" href="{{ url_for('login') }}">Login</a>
-     </li>
-    {% endif %}
-   </ul>
+    <!-- Brand -->
+    <a class="et-brand navbar-brand" href="{{ url_for('index') }}">
+      <span>InterLang</span><span class="mark" aria-hidden="true"></span>
+    </a>
+
+    <!-- Mobile toggle -->
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMenu"
+            aria-controls="navMenu" aria-expanded="false" aria-label="Toggle navigation">
+      <i class="bi bi-list"></i>
+    </button>
+
+    <!-- Menu -->
+    <div class="collapse navbar-collapse justify-content-end" id="navMenu">
+      <ul class="navbar-nav">
+
+        <!-- WordQuest -->
+        <li class="nav-item">
+          <a class="nav-link {% if boards_active %}active{% endif %}" href="{{ url_for('home') }}">
+             <i class="bi bi-grid-3x3-gap" aria-hidden="true"></i> <span>WordQuest</span>
+          </a>
+        </li>
+
+        <!-- EduTales -->
+        <li class="nav-item">
+          <a class="nav-link {% if stories_active %}active{% endif %}" href="{{ url_for('stories') }}">
+             <i class="bi bi-book" aria-hidden="true"></i> <span>EduTales</span>
+          </a>
+        </li>
+
+        <!-- CareerQuest (latest for logged-in) -->
+        <li class="nav-item">
+          {% if session.get('username') %}
+            <a class="nav-link {% if career_active %}active{% endif %}" href="{{ url_for('career_latest') }}">
+               <i class="bi bi-briefcase" aria-hidden="true"></i> <span>CareerQuest</span>
+            </a>
+          {% else %}
+            <a class="nav-link {% if career_active %}active{% endif %}" href="{{ url_for('career') }}">
+               <i class="bi bi-briefcase" aria-hidden="true"></i> <span>CareerQuest</span>
+            </a>
+          {% endif %}
+        </li>
+
+        <!-- Achievements -->
+        <li class="nav-item">
+          <a class="nav-link {% if ach_active %}active{% endif %}" href="{{ url_for('achievements') }}">
+             <i class="bi bi-trophy" aria-hidden="true"></i> <span>Achievements</span>
+          </a>
+        </li>
+
+        {% if session.get('username') %}
+        <!-- Profile dropdown -->
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle {% if profile_active %}active{% endif %}" href="#" id="profileMenu" data-bs-toggle="dropdown" aria-expanded="false">
+            <i class="bi bi-person-circle" aria-hidden="true"></i> <span>{{ session.get('username') }}</span>
+          </a>
+          <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="profileMenu">
+            <li>
+              <a class="dropdown-item" href="{{ url_for('profile') }}">
+                <i class="bi bi-person"></i> Profile
+              </a>
+            </li>
+            {% if session.get('username') == 'testtest' %}
+            <li>
+              <a class="dropdown-item" href="{{ url_for('admin_analytics_page') }}">
+                <i class="bi bi-speedometer2"></i> Admin
+              </a>
+            </li>
+            {% endif %}
+            <li><hr class="dropdown-divider"></li>
+            <li>
+              <a class="dropdown-item" href="{{ url_for('logout') }}">
+                <i class="bi bi-box-arrow-right"></i> Logout
+              </a>
+            </li>
+          </ul>
+        </li>
+        {% else %}
+        <!-- Login -->
+        <li class="nav-item">
+          <a class="nav-link" href="{{ url_for('login') }}">
+            <i class="bi bi-box-arrow-in-right" aria-hidden="true"></i> <span>Login</span>
+          </a>
+        </li>
+        {% endif %}
+
+      </ul>
+    </div>
   </div>
- </div>
 </nav>

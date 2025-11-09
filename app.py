@@ -16,6 +16,56 @@ from flask import (
 
 # ====== GPT client (optional; graceful fallback) ======
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+# ==== CareerQuest weekly unlock helpers ====
+from datetime import datetime, timedelta
+try:
+    from zoneinfo import ZoneInfo  # Python 3.9+
+except Exception:
+    ZoneInfo = None
+
+KST = ZoneInfo("Asia/Seoul") if ZoneInfo else None
+
+def _parse_sqlite_ts(ts: str) -> datetime:
+    """
+    Parses common SQLite TIMESTAMP formats into timezone-aware KST datetime.
+    Accepts 'YYYY-MM-DD HH:MM:SS' or ISO-like strings.
+    """
+    if not ts:
+        return datetime.now(tz=KST)
+    fmt_candidates = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f")
+    for fmt in fmt_candidates:
+        try:
+            dt = datetime.strptime(ts.split("+")[0], fmt)
+            return dt.replace(tzinfo=KST) if KST else dt
+        except Exception:
+            pass
+    # Fallback
+    return datetime.now(tz=KST)
+
+def compute_week_unlocks(created_at: str, weeks: int = 4):
+    """
+    Returns list of dicts:
+      [{"week":1, "unlock_at": datetime, "is_unlocked": bool}, ...]
+    Rule: Week 1 unlocks at creation time; each next week every +7 days.
+    """
+    base = _parse_sqlite_ts(created_at)
+    now = datetime.now(tz=KST) if KST else datetime.now()
+    states = []
+    for w in range(1, weeks + 1):
+        unlock_at = base + timedelta(days=(w - 1) * 7)
+        states.append({
+            "week": w,
+            "unlock_at": unlock_at,
+            "is_unlocked": now >= unlock_at
+        })
+    return states
+
+def _fmt_kst(dt: datetime) -> str:
+    return dt.astimezone(KST).strftime("%Y-%m-%d %H:%M") if KST else dt.strftime("%Y-%m-%d %H:%M")
+
+def get_openai():
+    _openai_client = OpenAI(api_key=OPENAI_API_KEY)
+    return _openai_client
 
 try:
     if OPENAI_API_KEY:
@@ -164,94 +214,93 @@ def dict_lookup_en_ko(word: str):
         pass
 
     return trans_ko, defin_en
-@app.route("/stories", methods=["GET"])
+def _stable_seed_from_args(path: str, q, category, theme, age, difficulty):
+    """
+    Build a deterministic daily seed from the current filters + path.
+    Ensures random order stays stable for the day (and per filter set).
+    """
+    today = datetime.date.today().isoformat()
+    key = f"{path}|{q}|{category}|{theme}|{age}|{difficulty}|{today}"
+    # Stable 32-bit integer from SHA1
+    return int(hashlib.sha1(key.encode("utf-8")).hexdigest(), 16) & 0xFFFFFFFF
+
+
+@app.route("/stories")
 def stories():
-    if "username" not in session:
-        return redirect(url_for("login"))
-    username = session["username"]
-    db = get_db()
+    q = request.args.get("q", "").strip()
+    category = request.args.get("category", "").strip()
+    theme = request.args.get("theme", "").strip()
+    age = request.args.get("age", "").strip()
+    difficulty = request.args.get("difficulty", "").strip()
+    page = max(1, int(request.args.get("page", 1)))
 
-    # user header (unchanged)
-    u = db.execute("SELECT level, xp, title_code FROM users WHERE username=?", (username,)).fetchone()
-    user_level = u["level"] if u else 1
-    user_xp    = u["xp"] if u else 0
-    title_info = TITLES.get((u["title_code"] or ""), DEFAULT_TITLE)
-    display_title = title_info["title"]
-    title_icon    = title_info["icon"]
+    # 1) Load all stories from your catalog (JSON, file, etc.)
+    #    This is the same code you already had that builds items_all (list of dicts).
+    items_all = load_all_catalog_stories()  # <-- your existing loader
 
-    # filters
-    q        = (request.args.get("q") or "").strip()
-    category = (request.args.get("category") or "").strip()
-    theme    = (request.args.get("theme") or "").strip()
-    try:    age = int(request.args.get("age")) if request.args.get("age") else None
-    except: age = None
-    try:    difficulty = int(request.args.get("difficulty")) if request.args.get("difficulty") else None
-    except: difficulty = None
+    # 2) Apply filters (same as before)
+    def _match(s):
+        if q and (q.lower() not in (s.get("title", "").lower() + " " + " ".join(s.get("categories", []))).lower()):
+            return False
+        if category and category.lower() not in [c.lower() for c in s.get("categories", [])]:
+            return False
+        if theme and theme.lower() not in (s.get("theme", "") or "").lower():
+            return False
+        if age:
+            try:
+                a = int(age)
+                if not (int(s.get("age_min", 0)) <= a <= int(s.get("age_max", 99))):
+                    return False
+            except Exception:
+                pass
+        if difficulty:
+            try:
+                if int(s.get("difficulty", 0)) != int(difficulty):
+                    return False
+            except Exception:
+                pass
+        return True
 
-    # NEW: optional "ready only" toggle
-    ready_only = (request.args.get("ready") == "1")
+    items_all = [s for s in items_all if _match(s)]
 
-    # pagination inputs
-    try:    page = max(1, int(request.args.get("page", 1)))
-    except: page = 1
+    # 3) Pull the set of already-generated story slugs from DB
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT slug FROM stories_generated")
+    generated_slugs = {row["slug"] for row in cur.fetchall()}
+
+    # 4) Split into two groups
+    already = [s for s in items_all if s.get("slug") in generated_slugs]
+    fresh = [s for s in items_all if s.get("slug") not in generated_slugs]
+
+    # 5) Randomize each group with a stable daily seed so pagination is consistent
+    seed = _stable_seed_from_args(
+        path=request.path, q=q, category=category, theme=theme, age=age, difficulty=difficulty
+    )
+    rng = random.Random(seed)
+    rng.shuffle(already)
+    rng.shuffle(fresh)
+
+    # 6) Concatenate: generated first (random), then the rest (random)
+    items_all = already + fresh
+
+    # 7) Pagination (unchanged except using randomized items_all)
     PAGE_SIZE = 12
     MAX_PAGES = 5
-
-    # fetch all matches (no limit), then ensure records exist
-    items_all = recommend_stories(
-        age=age, difficulty=difficulty, q=q or None,
-        category=category or None, theme=theme or None, limit=None
-    )
-    for s in items_all:
-        try:
-            ensure_story_record(s["slug"], s)
-        except Exception:
-            pass
-
-    # Identify which are already generated (content non-empty)
-    generated = set()
-    slugs = tuple(s["slug"] for s in items_all)
-    if slugs:
-        qmarks = ",".join(["?"] * len(slugs))
-        rows = db.execute(
-            f"""
-            SELECT slug FROM stories
-            WHERE slug IN ({qmarks})
-              AND COALESCE(NULLIF(content,''), '') <> ''
-            """,
-            slugs
-        ).fetchall()
-        generated = {r["slug"] for r in rows}
-
-    # If user asked for "ready only", filter here
-    if ready_only:
-        items_all = [s for s in items_all if s["slug"] in generated]
-
-    # Sort: generated first, then by title for stability
-    items_all.sort(key=lambda s: (0 if s["slug"] in generated else 1, (s.get("title") or "").lower()))
-
-    # paginate with a hard cap of 5 pages
     total_items = len(items_all)
     total_pages = min(MAX_PAGES, max(1, (total_items + PAGE_SIZE - 1) // PAGE_SIZE))
-    page = min(page, total_pages)
+    page = max(1, min(page, total_pages))
     start = (page - 1) * PAGE_SIZE
-    end   = start + PAGE_SIZE
-    items = items_all[start:end]
+    end = start + PAGE_SIZE
+    items_page = items_all[start:end]
 
     return render_template(
         "stories.html",
-        username=username,
-        user_level=user_level,
-        user_xp=user_xp,
-        display_title=display_title,
-        title_icon=title_icon,
-        items=items,
-        q=q, category=category, theme=theme, age=age, difficulty=difficulty,
+        items=items_page,
         page=page, total_pages=total_pages, page_size=PAGE_SIZE, total_items=total_items,
-        # NEW: pass these so the template can show badges and keep the toggle state
-        generated_slugs=generated,
-        ready_only=ready_only
+        q=q, category=category, theme=theme, age=age, difficulty=difficulty
     )
+
 
 def seed_achievements(db):
     # tables
@@ -536,138 +585,408 @@ WORD_POOLS = {
     }
 }
 # ==== UPDATED: gpt_generate_quiz (adds stronger system prompt + sanitization) ====
+LEVEL_CONCEPTS = {
+    1: "word",
+    2: "phrase",
+    3: "sentence",
+    4: "structure",
+    5: "mini_composition"
+}
 
-def gpt_generate_quiz(level: int):
+def concept_for_level(level: int) -> str:
+    return LEVEL_CONCEPTS.get(int(level), "sentence")
+import math
+
+def _token_set(s: str) -> set[str]:
+    return set(re.findall(r"[A-Za-z']{2,}", (s or "").lower()))
+
+def jaccard(a: set[str], b: set[str]) -> float:
+    if not a or not b: return 0.0
+    inter = len(a & b)
+    union = len(a | b)
+    return inter / union if union else 0.0
+
+def recent_prompt_set(username: str, lookback_days: int = 14, max_prompts: int = 500) -> tuple[set[str], list[tuple[str,set[str]]]]:
     """
-    Ask GPT for three arrays: mcq, short, long, sized by distribution_for_level(level).
-    Ages: 6–10 only; vocabulary and grammar must be age-appropriate.
+    Returns (norm_prompts, tokenized_prompts) from the user's recent quizzes.
+    tokenized_prompts: list of (original_prompt, token_set) for fuzzy checks.
     """
-    if not openai_client:
-        print("[GPT QUIZ] client not available -> returning None")
-        return None
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT qq.prompt
+          FROM quiz_questions qq
+          JOIN quizzes q ON q.id = qq.quiz_id
+         WHERE q.username = ?
+           AND q.created_at >= DATETIME('now', ?)
+         ORDER BY q.created_at DESC
+         LIMIT ?
+        """,
+        (username, f"-{lookback_days} days", max_prompts)
+    ).fetchall()
+    prompts = [r["prompt"] for r in rows if r["prompt"]]
+    norm = {_norm_prompt(p) for p in prompts}
+    toks = [(p, _token_set(p)) for p in prompts]
+    return norm, toks
 
-    mcq_need, short_need, long_need = distribution_for_level(level)
+def is_too_similar(prompt: str, recent_tok: list[tuple[str,set[str]]], thr: float = 0.8) -> bool:
+    ts = _token_set(prompt)
+    for _, t in recent_tok:
+        if jaccard(ts, t) >= thr:
+            return True
+    return False
+def gpt_generate_quiz(level: int) -> dict:
+    """
+    LLM-only generator that ALWAYS returns exactly 16 items (per distribution_for_level),
+    or raises RuntimeError. No local templating or padding — every item comes from GPT.
 
-    level_specs = {
-        1: dict(
-            cefr="CEFR A0–A1",
-            mcq_styles=["basic synonym (happy→joyful)", "very short fill-in (in/on/at/to)"],
-            short_hint="prepositions (in/on/at/to) and easy adverbs (slowly, quickly)",
-            long_len="8–14 words",
-            long_words_range=(2, 3),
-            examples_words=["dog","park","run","red","big","play"]
-        ),
-        2: dict(
-            cefr="CEFR A1",
-            mcq_styles=["synonym/antonym", "fill-in with common prepositions/adverbs"],
-            short_hint="prepositions/adverbs only; 1-word answers",
-            long_len="10–16 words",
-            long_words_range=(3, 4),
-            examples_words=["school","friend","story","river","quiet","walk","under","over"]
-        ),
-        3: dict(
-            cefr="CEFR A1–A2",
-            mcq_styles=["synonym + distractors", "short cloze (prepositions/adverbs)"],
-            short_hint="exact 1-word answers, still simple",
-            long_len="12–18 words",
-            long_words_range=(3, 4),
-            examples_words=["because","before","after","market","music","quickly","carefully"]
-        ),
-        4: dict(
-            cefr="CEFR A2",
-            mcq_styles=["synonym/closest meaning", "cloze with time/place prepositions"],
-            short_hint="one-word answers; avoid rare words",
-            long_len="14–20 words",
-            long_words_range=(4, 5),
-            examples_words=["adventure","help","learn","between","across","often","always"]
-        ),
-        5: dict(
-            cefr="CEFR A2+",
-            mcq_styles=["closest meaning; keep options concrete", "cloze with adverbs of manner/frequency"],
-            short_hint="one-word answers (preposition/adverb/conjunction like 'because')",
-            long_len="16–22 words",
-            long_words_range=(4, 5),
-            examples_words=["carefully","before","during","together","message","choice","bright","outside"]
-        ),
-    }
-    spec = level_specs.get(int(level), level_specs[2])
+    Updates:
+      • LONG: Prompt must explicitly list required_words, e.g.
+        "Write one short sentence using these words: cat, run, fast."
+      • SHORT: Must be truly single-answer. Answer is a single token (letters/digits only),
+        no synonyms, alternates must be [].
+    """
+    import os, json, re
+    from typing import Any, Dict, List
 
-    system = (
-        "You are an English quiz generator for children aged 6–10.\n"
-        "Return STRICT JSON with exactly three keys: 'mcq', 'short', and 'long'.\n"
-        "No extra keys or commentary. Keep language simple, kid-friendly, and concrete.\n\n"
-        "Formats:\n"
-        "• mcq: array of items {prompt, options[4], answer_index(int 0..3)}\n"
-        "  - Prompts must be short and clear. Options must be single words (no phrases), age-appropriate.\n"
-        "• short: array of items {prompt, answer, alternates(optional array of strings), hint(optional string), explanation(optional string)}\n"
-        "  - answer is the BEST one-word choice (preposition/adverb/conjunction like 'because').\n"
-        "  - alternates are other ONE-WORD responses that are grammatically acceptable in some contexts (e.g., 'into' when 'to' is best).\n"
-        "  - hint is one brief child-friendly sentence; explanation is a one-sentence reason why the BEST answer is correct.\n"
-        "• long: array of items {required_words[list of 2..6 strings], prompt(optional)}\n"
-        "  - If prompt is omitted, the app will show: 'Write one clear sentence using ALL of these words: ...'\n"
-        "  - required_words must be easy words only; no proper nouns; no slang; no scary/violent themes.\n\n"
-        "CRITICAL MCQ RULES:\n"
-        "• MCQs MUST have exactly one objectively correct answer.\n"
-        "• Avoid vague 'which sounds best/most suitable' phrasings.\n"
-        "• DO NOT create 'adverb of manner' MCQs where multiple options (e.g., 'quickly' vs 'slowly') could fit.\n"
-        "• Prefer synonyms/antonyms, simple definitions, or grammar rules with a single correct choice.\n"
-        "• When multiple words can fit a sentence, use a SHORT item instead and put other acceptable words in 'alternates'.\n"
-    )
+    MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    TEMPERATURE = 0.4
+    MAX_FULL_ATTEMPTS  = 3
+    MAX_PATCH_ATTEMPTS = 6
 
-    user_payload = {
-        "age_range": "6–10",
-        "cefr_target": spec["cefr"],
-        "level": int(level),
-        "counts": {"mcq": mcq_need, "short": short_need, "long": long_need},
-        "constraints": {
-            "use_only_kid_friendly_words": True,
-            "avoid_topics": ["violence", "romance", "politics", "religion", "scary content"],
-            "options_must_be_single_words": True,
-            "short_answer_is_single_word_only": True,
-        },
-        "mcq_styles": spec["mcq_styles"],
-        "short_rule": spec["short_hint"],
-        "long_rule": {
-            "target_sentence_length": spec["long_len"],
-            "required_words_count_range": list(spec["long_words_range"]),
-            "example_easy_words": spec["examples_words"],
+    try:
+        mcq_need, short_need, long_need = distribution_for_level(level)
+    except Exception:
+        mcq_need, short_need, long_need = (10, 4, 2)
+    total_need = int(mcq_need) + int(short_need) + int(long_need)
+    if total_need != 16:
+        raise RuntimeError(f"distribution_for_level({level}) must sum to 16, got {total_need}")
+
+    # ------- light guidance bank (never fabricate locally) -------
+    DIFF_NAME = {1:"Beginner",2:"Novice",3:"Intermediate",4:"Advanced",5:"Expert"}
+    def easy_bank():
+        l1, l2 = WORD_POOLS.get(1, {}), WORD_POOLS.get(2, {})
+        def pick(k): return list(dict.fromkeys((l1.get(k) or []) + (l2.get(k) or [])))
+        return {"nouns":pick("nouns"),"verbs":pick("verbs"),"adjectives":pick("adjectives"),
+                "adverbs":pick("adverbs"),"preps":pick("preps")}
+    BANK = easy_bank() if level >= 2 else WORD_POOLS.get(level, WORD_POOLS.get(1, {}))
+    diff_name = DIFF_NAME.get(int(level), "Intermediate")
+    max_sentence_len = 6 if level <= 3 else 8
+
+    # ------- small utils -------
+    def _is_str(x): return isinstance(x, str) and x.strip() != ""
+    def _norm(s): return (s or "").strip().lower()
+    def extract_json(text: str) -> Any:
+        try:
+            return json.loads(text)
+        except Exception:
+            pass
+        m = re.search(r"\{(?:[^{}]|(?R))*\}", text or "", flags=re.S)
+        if m:
+            try: return json.loads(m.group(0))
+            except Exception: return {}
+        return {}
+
+    # Single-token = letters/numbers only, no spaces/hyphens/slashes/commas.
+    _single_token_re = re.compile(r"^[A-Za-z0-9]+$")
+
+    def validate_block(data: Dict) -> Dict[str, List[Dict]]:
+        """
+        Accept only well-formed items. No synthesis here.
+        LONG:
+          - required_words length 3..4
+          - prompt MUST explicitly list them in the text using phrase:
+            'using these words: w1, w2, w3' (case-insensitive for checking)
+        SHORT:
+          - answer must be a single token (letters/digits only)
+          - alternates forced to []
+        """
+        out = {"mcq": [], "short": [], "long": []}
+
+        # MCQ
+        for it in (data.get("mcq") or []):
+            if not isinstance(it, dict): continue
+            p, opts, ai = it.get("prompt",""), it.get("options",[]), it.get("answer_index",None)
+            if not _is_str(p): continue
+            if not (isinstance(opts, list) and len(opts) == 4 and all(_is_str(o) for o in opts)): continue
+            if not (isinstance(ai, int) and 0 <= ai <= 3): continue
+            out["mcq"].append({
+                "prompt": p.strip(),
+                "options": [str(o).strip() for o in opts],
+                "answer_index": int(ai),
+                "explanation": (it.get("explanation") or "").strip(),
+                "hint": (it.get("hint") or "").strip()
+            })
+
+        # SHORT (enforce single-token answer, no alternates)
+        for it in (data.get("short") or []):
+            if not isinstance(it, dict): continue
+            p, a = it.get("prompt",""), it.get("answer","")
+            if not (_is_str(p) and _is_str(a)): continue
+            a = a.strip()
+            if not _single_token_re.fullmatch(a):  # reject multi-word or punctuated answers
+                continue
+            out["short"].append({
+                "prompt": p.strip(),
+                "answer": a,
+                "alternates": [],  # force empty to keep one-and-only-one answer
+                "explanation": (it.get("explanation") or "").strip(),
+                "hint": (it.get("hint") or "").strip()
+            })
+
+        # LONG (explicit required words in prompt text)
+        for it in (data.get("long") or []):
+            if not isinstance(it, dict): continue
+            req = (it.get("required_words",[]) or [])
+            if not (isinstance(req, list) and 3 <= len(req) <= 4 and all(_is_str(w) for w in req)): continue
+            req = [str(w).strip() for w in req[:4]]
+            p = (it.get("prompt") or "").strip()
+
+            # Prompt must explicitly show the list using a clear phrase
+            # e.g., "Write one short sentence using these words: w1, w2, w3."
+            ok_phrase = ("using these words:" in _norm(p))
+            has_all = all(_norm(w) in _norm(p) for w in req)
+            if not (_is_str(p) and ok_phrase and has_all):
+                # If LLM didn't follow, reject this item
+                continue
+
+            out["long"].append({
+                "prompt": p,
+                "required_words": req,
+                "explanation": (it.get("explanation") or "").strip(),
+                "hint": (it.get("hint") or "").strip()
+            })
+        return out
+
+    # ------- request payloads -------
+    # JSON schema (guidance for the model)
+    base_schema = {
+        "type":"object","required":["mcq","short","long"],
+        "properties":{
+            "mcq":{"type":"array","items":{
+                "type":"object","required":["prompt","options","answer_index","explanation","hint"],
+                "properties":{
+                    "prompt":{"type":"string"},
+                    "options":{"type":"array","minItems":4,"maxItems":4,"items":{"type":"string"}},
+                    "answer_index":{"type":"integer","minimum":0,"maximum":3},
+                    "explanation":{"type":"string"},
+                    "hint":{"type":"string"}}}},
+            "short":{"type":"array","items":{
+                "type":"object","required":["prompt","answer","alternates","explanation","hint"],
+                "properties":{
+                    "prompt":{"type":"string"},
+                    "answer":{"type":"string"},
+                    "alternates":{"type":"array","items":{"type":"string"}},
+                    "explanation":{"type":"string"},
+                    "hint":{"type":"string"}}}},
+            "long":{"type":"array","items":{
+                "type":"object","required":["prompt","required_words","hint"],
+                "properties":{
+                    "prompt":{"type":"string"},
+                    "required_words":{"type":"array","minItems":3,"maxItems":4,"items":{"type":"string"}},
+                    "hint":{"type":"string"}}}}
         }
     }
 
-    try:
-        resp = openai_client.chat.completions.create(
-            model=OPENAI_MODEL,
-            response_format={"type": "json_object"},
-            temperature=0.4,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": json.dumps(user_payload)}
+    sys_msg = (
+        "You create quizzes for very young ESL learners (Pre-A1/A1). "
+        "Return a SINGLE JSON object with keys mcq/short/long. No prose, no markdown."
+    )
+
+    # Shared audience rules
+    audience_rules = {
+        "cefr": "Pre-A1/A1",
+        "avoid": ["passive voice","perfect tenses","conditionals","rare words","idioms"],
+        "sentence_word_limit": max_sentence_len,
+        "lowercase_single_words": True
+    }
+
+    # SHORT: restrict to unambiguous templates that yield a single-token answer.
+    # The model MUST use one of these patterns.
+    short_templates = [
+        "Type the first letter of '{word}'. Answer is one letter.",
+        "Type the last letter of '{word}'. Answer is one letter.",
+        "Write the plural of '{regular_noun}'. Answer is one word (letters only).",
+        "Type this number in words: {digit_0_to_10}. Answer is one word (letters only).",
+        "Write the base form of this past tense: '{regular_past}'. Answer is one word (letters only)."
+    ]
+
+    long_rule_line = (
+        "LONG items MUST use this exact prompt format: "
+        "'Write one short sentence using these words: WORD1, WORD2, WORD3.' "
+        "Use 3–4 very simple words from the word_bank. Do not add quotes around the list."
+    )
+
+    def payload_full():
+        return {
+            "task": "Generate English quiz items for a 4x4 Bingo board (TOTAL 16).",
+            "hard_requirements": [
+                "Return ONLY a JSON object with keys mcq/short/long. No markdown.",
+                f"Produce EXACTLY mcq={mcq_need}, short={short_need}, long={long_need}.",
+                "No placeholders, no empty strings, no duplicates.",
+                "MCQ: exactly 4 options + valid answer_index (0..3).",
+                # SHORT rules
+                "SHORT items MUST be unambiguous and yield exactly ONE valid answer.",
+                "SHORT answer MUST be a single token (letters/digits only, no spaces, hyphens, or punctuation).",
+                "SHORT alternates MUST be an empty array [].",
+                "SHORT prompts MUST use one of these patterns:",
+                *short_templates,
+                # LONG rules
+                long_rule_line,
+                "In every LONG prompt, explicitly show the required words using the phrase 'using these words:' "
+                "followed by the comma-separated list. Those words MUST also appear in required_words.",
             ],
-        )
-        raw = (resp.choices[0].message.content or "").strip()
-        data = json.loads(raw)
+            "level": int(level),
+            "difficulty_label": diff_name,
+            "counts": {"mcq": mcq_need, "short": short_need, "long": long_need},
+            "audience_rules": audience_rules,
+            "word_bank": {
+                "nouns": BANK.get("nouns", [])[:20],
+                "verbs": BANK.get("verbs", [])[:20],
+                "adjectives": BANK.get("adjectives", [])[:20],
+                "adverbs": BANK.get("adverbs", [])[:20],
+                "preps": BANK.get("preps", [])[:10],
+            },
+            "output_schema": base_schema
+        }
 
-        # ---- NEW: sanitize / de-ambiguate ----
-        data = sanitize_gpt_quiz_payload(data)
+    def payload_patch(missing: Dict[str,int], banlist_prompts: List[str]):
+        return {
+            "task": "PATCH: Provide ONLY the missing items to reach the exact totals.",
+            "missing_counts": missing,
+            "banlist_prompts": banlist_prompts,
+            "instructions": [
+                "Return ONLY a JSON object with mcq/short/long arrays.",
+                "For any type with 0 missing, return an EMPTY array [].",
+                "Every prompt must be NEW and must NOT be in banlist_prompts.",
+                "No placeholders. No duplicates in this response.",
+                # Re-assert critical constraints in PATCH
+                "SHORT: single-token answer, alternates must be []. Use only the approved templates.",
+                long_rule_line
+            ],
+            "audience_rules": audience_rules,
+            "word_bank": {
+                "nouns": BANK.get("nouns", [])[:20],
+                "verbs": BANK.get("verbs", [])[:20],
+                "adjectives": BANK.get("adjectives", [])[:20],
+                "adverbs": BANK.get("adverbs", [])[:20],
+                "preps": BANK.get("preps", [])[:10],
+            },
+            "output_schema": base_schema
+        }
 
-        # normalize keys + slice
-        if "long" not in data and "sentence" in data and isinstance(data["sentence"], list):
-            data["long"] = data["sentence"]
-        if "short" not in data: data["short"] = []
-        if "mcq" not in data:   data["mcq"]   = []
+    def call_llm(payload: Dict) -> str:
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=OPENAI_API_KEY)
+            try:
+                resp = client.chat.completions.create(
+                    model=MODEL, temperature=TEMPERATURE,
+                    response_format={"type":"json_object"},
+                    messages=[{"role":"system","content":sys_msg},
+                              {"role":"user","content":json.dumps(payload, ensure_ascii=False)}]
+                )
+            except Exception:
+                resp = client.chat.completions.create(
+                    model=MODEL, temperature=TEMPERATURE,
+                    messages=[{"role":"system","content":sys_msg},
+                              {"role":"user","content":json.dumps(payload, ensure_ascii=False)}]
+                )
+            return resp.choices[0].message.content or ""
+        except Exception:
+            import openai
+            openai.api_key = os.getenv("OPENAI_API_KEY")
+            try:
+                resp = openai.ChatCompletion.create(
+                    model=MODEL, temperature=TEMPERATURE,
+                    response_format={"type":"json_object"},
+                    messages=[{"role":"system","content":sys_msg},
+                              {"role":"user","content":json.dumps(payload, ensure_ascii=False)}]
+                )
+            except Exception:
+                resp = openai.ChatCompletion.create(
+                    model=MODEL, temperature=TEMPERATURE,
+                    messages=[{"role":"system","content":sys_msg},
+                              {"role":"user","content":json.dumps(payload, ensure_ascii=False)}]
+                )
+            return resp["choices"][0]["message"]["content"] or ""
 
-        if not isinstance(data.get("mcq", []), list):   data["mcq"] = []
-        if not isinstance(data.get("short", []), list): data["short"] = []
-        if not isinstance(data.get("long", []), list):  data["long"] = []
+    # ---- accumulate, track prompts to avoid during PATCH ----
+    acc = {"mcq": [], "short": [], "long": []}
+    seen_prompts_norm = set()
 
-        data["mcq"]   = data["mcq"][:mcq_need]
-        data["short"] = data["short"][:short_need]
-        data["long"]  = data["long"][:long_need]
+    def missing_counts():
+        return {
+            "mcq":  max(0, mcq_need   - len(acc["mcq"])),
+            "short":max(0, short_need - len(acc["short"])),
+            "long": max(0, long_need  - len(acc["long"]))
+        }
 
-        return data
-    except Exception as e:
-        print("[GPT QUIZ] exception:", repr(e))
-        return None
+    # Full attempts
+    for a in range(1, MAX_FULL_ATTEMPTS+1):
+        raw = call_llm(payload_full())
+        data = extract_json(raw)
+        block = validate_block(data)
+
+        print(f"[GEN#{a}] got: mcq={len(block['mcq'])}, short={len(block['short'])}, long={len(block['long'])}")
+
+        for t in ("mcq","short","long"):
+            for it in block[t]:
+                p = _norm(it.get("prompt"))
+                if p and p not in seen_prompts_norm:
+                    acc[t].append(it)
+                    seen_prompts_norm.add(p)
+
+        miss = missing_counts()
+        if sum(miss.values()) == 0:
+            acc["mcq"]   = acc["mcq"][:mcq_need]
+            acc["short"] = acc["short"][:short_need]
+            acc["long"]  = acc["long"] [:long_need]
+            print(f"[GEN OK] Final: mcq={len(acc['mcq'])}, short={len(acc['short'])}, long={len(acc['long'])}")
+            return acc
+
+    # Patch attempts
+    for pidx in range(1, MAX_PATCH_ATTEMPTS+1):
+        miss = missing_counts()
+        if sum(miss.values()) == 0:
+            break
+        banlist = list(seen_prompts_norm)
+        raw = call_llm(payload_patch(miss, banlist))
+        data = extract_json(raw)
+        block = validate_block(data)
+
+        # Enforce exact counts for each type in this PATCH
+        for t in ("mcq","short","long"):
+            need = miss[t]
+            got  = len(block[t])
+            if need == 0:
+                block[t] = []
+            elif got != need:
+                print(f"[PATCH#{pidx}] type '{t}' expected {need} but got {got} → will retry")
+                block[t] = []
+
+        print(f"[PATCH#{pidx}] accepted: mcq={len(block['mcq'])}, short={len(block['short'])}, long={len(block['long'])}")
+
+        for t in ("mcq","short","long"):
+            for it in block[t]:
+                p = _norm(it.get("prompt"))
+                if p and p not in seen_prompts_norm:
+                    acc[t].append(it)
+                    seen_prompts_norm.add(p)
+
+        if sum(missing_counts().values()) == 0:
+            break
+
+    miss = missing_counts()
+    if sum(miss.values()) != 0:
+        raise RuntimeError(f"LLM could not produce exactly 16 items. Missing -> {miss}")
+
+    acc["mcq"]   = acc["mcq"][:mcq_need]
+    acc["short"] = acc["short"][:short_need]
+    acc["long"]  = acc["long"] [:long_need]
+    print(f"[GEN OK] Final after PATCH: mcq={len(acc['mcq'])}, short={len(acc['short'])}, long={len(acc['long'])}")
+    return acc
+
 
 # ==== NEW HELPERS (place near your GPT functions) ====
 
@@ -841,152 +1160,6 @@ def insert_gpt_long(db, quiz_id: int, pos: int, item: dict, used_norm_prompts: s
         return False
 
 
-# -------------------- Local unique generators (fallbacks) --------------------
-def add_mcq_question_unique(db, quiz_id: int, level: int, pos: int,
-                            used_norm_prompts: set, max_tries: int = 8) -> bool:
-    """
-    Generates a unique MCQ using WORD_POOLS[level].
-    Two modes:
-      - synonym mode (preferred when available)
-      - fill-in-the-blank (preposition/adverb)
-    """
-    for _ in range(max_tries):
-        pool = WORD_POOLS[level]
-
-        # Prefer synonym mode if available
-        if random.random() < 0.6 and pool.get("synonyms"):
-            base_word = random.choice(list(pool["synonyms"].keys()))
-            correct = random.choice(pool["synonyms"][base_word])
-            distractors = []
-            for cat in ("nouns", "verbs", "adjectives"):
-                distractors += random.sample(pool[cat], min(3, len(pool[cat])))
-            distractors = [w for w in distractors if w != correct][:3]
-            if len(distractors) < 3:
-                continue
-
-            options = [correct] + distractors
-            random.shuffle(options)
-            correct_letter = "ABCD"[options.index(correct)]
-            prompt = f"Choose the synonym of “{base_word}”."
-            extra = {"mode": "synonym", "base": base_word, "pos": pos}
-
-        else:
-            # Fill-in-the-blank: preposition or adverb
-            preps = WORD_POOLS[level]["preps"]
-            adverbs = WORD_POOLS[level]["adverbs"]
-
-            if random.random() < 0.5 and len(preps) >= 4:
-                correct = random.choice(preps)
-                distractors = random.sample([p for p in preps if p != correct], 3)
-                sentence = "I will meet you ___ the park."
-                prompt = f"Fill in the blank with the best preposition:\n“{sentence}”"
-                options = [correct] + distractors
-            else:
-                correct = random.choice(adverbs)
-                distractors = random.sample([a for a in adverbs if a != correct], 3)
-                base = random.choice(WORD_POOLS[level]["verbs"])
-                sentence = f"She will {base} ___ to finish the task."
-                prompt = f"Fill in the blank with the best adverb:\n“{sentence}”"
-                options = [correct] + distractors
-
-            random.shuffle(options)
-            correct_letter = "ABCD"[options.index(correct)]
-            extra = {"mode": "fill", "sentence": sentence, "pos": pos}
-
-        n = _norm_prompt(prompt)
-        if n in used_norm_prompts:
-            continue
-
-        db.execute(
-            """INSERT INTO quiz_questions
-               (quiz_id,qtype,prompt,choice_a,choice_b,choice_c,choice_d,correct,extra)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
-            (quiz_id, "mcq", prompt, options[0], options[1], options[2], options[3], correct_letter, json.dumps(extra))
-        )
-        used_norm_prompts.add(n)
-        return True
-
-    return False
-def add_short_question_unique(db, quiz_id: int, level: int, pos: int,
-                              used_norm_prompts: set, max_tries: int = 8) -> bool:
-    """
-    Local fallback SHORT generator (kept for safety).
-    Now includes an 'explanation' in extra for better feedback.
-    """
-    for _ in range(max_tries):
-        pool = WORD_POOLS[level]
-        use_prep = random.random() < 0.7
-
-        if use_prep:
-            correct = "to"
-            sentence = "He walked ___ the store."
-            prompt = f"Fill the blank with the best preposition:\n“{sentence}”"
-            alternates = ["into", "toward"]
-            hint = "Use 'to' for destination; 'into' means going inside; 'toward' means in the direction of."
-            explanation = "Here the sentence describes a destination (the store), so 'to' fits best."
-        else:
-            correct = random.choice(pool["adverbs"])
-            verb = random.choice(pool["verbs"])
-            sentence = f"They {verb} ___ to catch the bus."
-            prompt = f"Fill the blank with the best adverb:\n“{sentence}”"
-            alternates = []
-            hint = None
-            explanation = None
-
-        n = _norm_prompt(prompt)
-        if n in used_norm_prompts:
-            continue
-
-        extra = {
-            "mode": "short",
-            "sentence": sentence,
-            "pos": pos,
-            "alternates": alternates,
-            "hint": hint,
-            "explanation": explanation,
-        }
-        db.execute(
-            """INSERT INTO quiz_questions (quiz_id,qtype,prompt,correct,extra)
-               VALUES (?,?,?,?,?)""",
-            (quiz_id, "short", prompt, correct, json.dumps(extra))
-        )
-        used_norm_prompts.add(n)
-        return True
-
-    return False
-
-
-
-
-def add_long_question_unique(db, quiz_id: int, level: int, pos: int,
-                             used_norm_prompts: set, max_tries: int = 8) -> bool:
-    """
-    Generates a unique LONG item with 2–5 required words.
-    """
-    for _ in range(max_tries):
-        pool = WORD_POOLS[level]
-        required_count = {1: 2, 2: 3, 3: 3, 4: 4, 5: 5}[level]
-
-        picks = []
-        picks += random.sample(pool["nouns"], min(2, len(pool["nouns"])))
-        picks += random.sample(pool["verbs"], min(2, len(pool["verbs"])))
-        picks += random.sample(pool["adjectives"], min(2, len(pool["adjectives"])))
-        random.shuffle(picks)
-        required = picks[:required_count]
-
-        prompt = f"Write a single clear sentence using ALL of these words: {', '.join(required)}."
-        n = _norm_prompt(prompt)
-        if n in used_norm_prompts:
-            continue
-
-        extra = {"required_words": required, "pos": pos}
-        db.execute(
-            """INSERT INTO quiz_questions (quiz_id,qtype,prompt,correct,extra)
-               VALUES (?,?,?,?,?)""",
-            (quiz_id, "long", prompt, json.dumps(required), json.dumps(extra))
-        )
-        used_norm_prompts.add(n)
-        return True
 
     return False
 
@@ -1081,98 +1254,320 @@ def build_mock_catalog(n=1000):
 # Build once and reuse
 MOCK_CATALOG = build_mock_catalog()
 def create_board_quiz(username: str, level: int) -> int:
+    """
+    Create a new 4x4 board for `username` at `level`:
+      1) Ask LLM for full set (via gpt_generate_quiz(level)).
+      2) Strictly validate items.
+      3) If any are invalid or counts are short, run PATCH calls to LLM
+         to replace only the missing/invalid parts (NO local templating).
+      4) Persist exactly 16 validated items with fixed positions (0..15).
+
+    Raises RuntimeError if, after several retries, we still don't have valid 16 GPT items.
+    """
+    import os, json, re, hashlib, random
+    from typing import Dict, List, Any
+
     db = get_db()
+
+    # ---------- counts ----------
+    try:
+        need_mcq, need_short, need_long = distribution_for_level(level)
+    except Exception:
+        need_mcq, need_short, need_long = (10, 4, 2)
+    if (need_mcq + need_short + need_long) != 16:
+        raise RuntimeError("distribution_for_level(level) must sum to 16.")
+
+    TOTAL = 16
+
+    # ---------- helpers ----------
+    def _is_str(x): return isinstance(x, str) and x.strip() != ""
+    def _norm(s: str) -> str: return re.sub(r"\s+", " ", (s or "").strip().lower())
+
+    def validate_block(block: Dict[str, Any]) -> Dict[str, List[Dict]]:
+        """Return only valid items (no modification)."""
+        out = {"mcq": [], "short": [], "long": []}
+
+        # MCQ
+        for it in (block.get("mcq") or []):
+            if not isinstance(it, dict): continue
+            prompt = it.get("prompt", "")
+            options = it.get("options", [])
+            ans_idx = it.get("answer_index", None)
+            expl = (it.get("explanation") or "").strip()
+            hint = (it.get("hint") or "").strip()
+            if not _is_str(prompt): continue
+            if not (isinstance(options, list) and len(options) == 4 and all(_is_str(o) for o in options)):
+                continue
+            if not (isinstance(ans_idx, int) and 0 <= ans_idx <= 3): continue
+            out["mcq"].append({
+                "prompt": prompt.strip(),
+                "options": [str(o).strip() for o in options],
+                "answer_index": int(ans_idx),
+                "explanation": expl,
+                "hint": hint
+            })
+
+        # SHORT
+        for it in (block.get("short") or []):
+            if not isinstance(it, dict): continue
+            prompt = it.get("prompt", "")
+            answer = it.get("answer", "")
+            alts = it.get("alternates", []) or []
+            expl = (it.get("explanation") or "").strip()
+            hint = (it.get("hint") or "").strip()
+            if not (_is_str(prompt) and _is_str(answer)): continue
+            if not isinstance(alts, list) or any(not _is_str(a) for a in alts): alts = []
+            out["short"].append({
+                "prompt": prompt.strip(),
+                "answer": answer.strip(),
+                "alternates": [str(a).strip() for a in alts][:2],
+                "explanation": expl,
+                "hint": hint
+            })
+
+        # LONG (STRICT: require prompt AND 3–4 required_words)
+        for it in (block.get("long") or []):
+            if not isinstance(it, dict): continue
+            prompt = it.get("prompt", "")
+            req = it.get("required_words", []) or []
+            hint = (it.get("hint") or "").strip()
+            if not _is_str(prompt): continue
+            if not (isinstance(req, list) and 3 <= len(req) <= 4 and all(_is_str(w) for w in req)): continue
+            out["long"].append({
+                "prompt": prompt.strip(),
+                "required_words": [str(w).strip() for w in req[:4]],
+                "explanation": "",
+                "hint": hint
+            })
+        return out
+
+    # Duplicate guards
+    def sig_mcq(it: Dict) -> str:
+        p = _norm(it.get("prompt", ""))
+        opts = [ _norm(o) for o in (it.get("options") or []) ]
+        return hashlib.md5(f"mcq|{p}|{','.join(sorted(opts))}".encode()).hexdigest()
+
+    def sig_short(it: Dict) -> str:
+        return hashlib.md5(f"short|{_norm(it.get('prompt',''))}|{_norm(it.get('answer',''))}".encode()).hexdigest()
+
+    def sig_long(it: Dict) -> str:
+        req = ",".join(sorted([_norm(w) for w in (it.get("required_words") or [])]))
+        return hashlib.md5(f"long|{_norm(it.get('prompt',''))}|{req}".encode()).hexdigest()
+
+    def dedup_merge(dest: Dict[str, List[Dict]], block: Dict[str, List[Dict]],
+                    seen_prompts: set, seen_sigs: set):
+        added = 0
+        for t in ("mcq", "short", "long"):
+            for it in block[t]:
+                pn = _norm(it.get("prompt", ""))
+                if not pn or pn in seen_prompts:  # prompt dup
+                    continue
+                if t == "mcq": s = sig_mcq(it)
+                elif t == "short": s = sig_short(it)
+                else: s = sig_long(it)
+                if s in seen_sigs:  # structural dup
+                    continue
+                dest[t].append(it)
+                seen_prompts.add(pn)
+                seen_sigs.add(s)
+                added += 1
+        return added
+
+    # LLM patcher (ONLY to fix missing pieces)
+    def patch_missing(missing: Dict[str, int], banlist: List[str]) -> Dict[str, List[Dict]]:
+        """
+        Ask the LLM to return ONLY the requested counts, no extras, no prose.
+        This relies on the same model/key your app already uses elsewhere.
+        """
+        payload = {
+            "task": "PATCH: provide ONLY missing items to reach exact totals for a 4x4 Bingo (total 16).",
+            "missing_counts": missing,
+            "banlist_prompts": banlist,
+            "hard_requirements": [
+                "Return ONLY a JSON object with arrays mcq/short/long.",
+                "For each requested type, return EXACTLY that many items.",
+                "For types with 0 requested, return an EMPTY array [].",
+                "All prompts must be NEW (not in banlist_prompts).",
+                "No placeholders; all strings must be non-empty.",
+                "MCQ: exactly 4 options, answer_index in 0..3.",
+                "LONG: must include 'prompt' and 'required_words' (3–4 words)."
+            ]
+        }
+
+        # Use the same client style as your gpt_generate_quiz
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            try:
+                resp = client.chat.completions.create(
+                    model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+                    temperature=0.4,
+                    response_format={"type": "json_object"},
+                    messages=[
+                        {"role": "system", "content": "Return STRICT JSON. No prose, no markdown."},
+                        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}
+                    ]
+                )
+            except Exception:
+                resp = client.chat.completions.create(
+                    model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+                    temperature=0.4,
+                    messages=[
+                        {"role": "system", "content": "Return STRICT JSON. No prose, no markdown."},
+                        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}
+                    ]
+                )
+            txt = resp.choices[0].message.content or ""
+        except Exception:
+            import openai
+            openai.api_key = os.getenv("OPENAI_API_KEY")
+            try:
+                resp = openai.ChatCompletion.create(
+                    model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+                    temperature=0.4,
+                    response_format={"type": "json_object"},
+                    messages=[
+                        {"role": "system", "content": "Return STRICT JSON. No prose, no markdown."},
+                        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}
+                    ]
+                )
+            except Exception:
+                resp = openai.ChatCompletion.create(
+                    model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+                    temperature=0.4,
+                    messages=[
+                        {"role": "system", "content": "Return STRICT JSON. No prose, no markdown."},
+                        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}
+                    ]
+                )
+            txt = resp["choices"][0]["message"]["content"] or ""
+
+        # tolerant JSON extract
+        def extract_json(text: str) -> Any:
+            try:
+                return json.loads(text)
+            except Exception:
+                m = re.search(r"\{(?:[^{}]|(?R))*\}", text or "", flags=re.S)
+                if m:
+                    try:
+                        return json.loads(m.group(0))
+                    except Exception:
+                        return {}
+                return {}
+
+        return validate_block(extract_json(txt))
+
+    # ---------- step 1: full generation ----------
+    acc = {"mcq": [], "short": [], "long": []}
+    seen_prompts, seen_sigs = set(), set()
+
+    full = gpt_generate_quiz(level)  # your existing function
+    block = validate_block(full)
+    dedup_merge(acc, block, seen_prompts, seen_sigs)
+
+    # ---------- step 2: patch missing (retry) ----------
+    def missing_now():
+        return {
+            "mcq":  max(0, need_mcq  - len(acc["mcq"])),
+            "short":max(0, need_short- len(acc["short"])),
+            "long": max(0, need_long - len(acc["long"]))
+        }
+
+    PATCH_TRIES = 6
+    for _ in range(PATCH_TRIES):
+        miss = missing_now()
+        if sum(miss.values()) == 0:
+            break
+        banlist = list(seen_prompts)
+        patched = patch_missing(miss, banlist)
+
+        # Enforce exact counts from the patch response
+        for t in ("mcq", "short", "long"):
+            if len(patched[t]) != miss[t]:
+                # reject this type; ask again next iteration
+                patched[t] = []
+
+        dedup_merge(acc, patched, seen_prompts, seen_sigs)
+
+    # Final check
+    if not (len(acc["mcq"]) == need_mcq and len(acc["short"]) == need_short and len(acc["long"]) == need_long):
+        raise RuntimeError(
+            f"LLM could not provide exactly mcq={need_mcq}, short={need_short}, long={need_long} after patches. "
+            f"Got mcq={len(acc['mcq'])}, short={len(acc['short'])}, long={len(acc['long'])}"
+        )
+
+    # ---------- persist ----------
     cur = db.execute("INSERT INTO quizzes(username, level) VALUES(?, ?)", (username, level))
     quiz_id = cur.lastrowid
 
-    mcq_need, short_need, long_need = distribution_for_level(level)
-    gpt = gpt_generate_quiz(level) or {}
+    # Fixed board positions 0..15 (no shuffling -> your front-end places by pos)
+    order: List[Dict] = (
+        [dict(t="mcq",  item=it) for it in acc["mcq"]] +
+        [dict(t="short",item=it) for it in acc["short"]] +
+        [dict(t="long", item=it) for it in acc["long"]]
+    )
+    # If you want a simple interleave to avoid clumping, you can do that here,
+    # but we’ll keep it deterministic by type order as above.
 
-    gpt_mcq   = list(gpt.get("mcq",   []))
-    gpt_short = list(gpt.get("short", []))
-    gpt_long  = list(gpt.get("long", gpt.get("sentence", [])))
+    # Debug summary
+    def trunc(s, n=70):
+        s = (s or "").replace("\n", " ").strip()
+        return (s[:n] + "…") if len(s) > n else s
+    print(f"[create_board_quiz] L{level} totals: mcq={len(acc['mcq'])}, short={len(acc['short'])}, long={len(acc['long'])}")
+    for i, it in enumerate(acc["mcq"]):
+        print(f"  MCQ[{i:02d}] {trunc(it.get('prompt'))}  ans={['A','B','C','D'][int(it.get('answer_index',0))]}")
+    for i, it in enumerate(acc["short"]):
+        print(f"  SHORT[{i:02d}] {trunc(it.get('prompt'))}  ans={trunc(it.get('answer'))}")
+    for i, it in enumerate(acc["long"]):
+        print(f"  LONG[{i:02d}] {trunc(it.get('prompt'))}  req={','.join((it.get('required_words') or [])[:4])}")
 
-    if len(gpt_mcq)   < mcq_need:   raise RuntimeError(f"GPT returned {len(gpt_mcq)} MCQ, need {mcq_need}")
-    if len(gpt_short) < short_need: raise RuntimeError(f"GPT returned {len(gpt_short)} short, need {short_need}")
-    if len(gpt_long)  < long_need:  raise RuntimeError(f"GPT returned {len(gpt_long)} long, need {long_need}")
+    # Insert with extra.pos = 0..15
+    for pos in range(TOTAL):
+        t = order[pos]["t"]
+        it = order[pos]["item"]
+        prompt = (it.get("prompt") or "").strip()
 
-    positions = list(range(16))
-    random.shuffle(positions)
+        extra = {
+            "pos": pos,
+            "hint": (it.get("hint") or "").strip(),
+            "explanation": (it.get("explanation") or "").strip()
+        }
 
-    used_norm_prompts = set()
+        choice_a = choice_b = choice_c = choice_d = None
+        correct = None
 
-    # MCQ
-    for _ in range(mcq_need):
-        pos = positions.pop()
-        item = gpt_mcq.pop(0)
-        prompt  = str(item.get("prompt", "")).strip()
-        options = item.get("options", [])
-        ai      = item.get("answer_index", None)
-        if not (prompt and isinstance(options, list) and len(options) >= 4 and isinstance(ai, int) and 0 <= ai < 4):
-            raise RuntimeError("Bad MCQ item from GPT")
-        n = _norm_prompt(prompt)
-        if n in used_norm_prompts:
-            raise RuntimeError("Duplicate MCQ prompt from GPT")
+        if t == "mcq":
+            options = (it.get("options") or [])[:4]
+            choice_a, choice_b, choice_c, choice_d = [str(o).strip() for o in options]
+            ai = int(it.get("answer_index", 0))
+            correct = ["A", "B", "C", "D"][ai]
 
-        choice_a, choice_b, choice_c, choice_d = options[:4]
-        correct_letter = "ABCD"[ai]
-        extra = {"mode": "gpt", "pos": pos}
+        elif t == "short":
+            correct = (it.get("answer") or "").strip()
+            alts = it.get("alternates") or []
+            if isinstance(alts, list) and alts:
+                extra["alternates"] = [str(a).strip() for a in alts[:2]]
+
+        else:  # long
+            req = it.get("required_words") or []
+            extra["required_words"] = [str(w).strip() for w in req[:4]]
+
         db.execute(
-            """INSERT INTO quiz_questions
-               (quiz_id,qtype,prompt,choice_a,choice_b,choice_c,choice_d,correct,extra)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
-            (quiz_id, "mcq", prompt, choice_a, choice_b, choice_c, choice_d, correct_letter, json.dumps(extra))
+            """
+            INSERT INTO quiz_questions
+              (quiz_id, qtype, prompt, choice_a, choice_b, choice_c, choice_d, correct, extra)
+            VALUES (?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                quiz_id, t, prompt,
+                choice_a, choice_b, choice_c, choice_d,
+                correct, json.dumps(extra, ensure_ascii=False)
+            )
         )
-        used_norm_prompts.add(n)
-
-    # SHORT (captures alternates + hint + explanation)
-    for _ in range(short_need):
-        pos = positions.pop()
-        item = gpt_short.pop(0)
-        prompt = str(item.get("prompt", "")).strip()
-        answer = str(item.get("answer", "")).strip()
-        if not (prompt and answer):
-            raise RuntimeError("Bad short item from GPT")
-        n = _norm_prompt(prompt)
-        if n in used_norm_prompts:
-            raise RuntimeError("Duplicate short prompt from GPT")
-
-        alternates = []
-        if isinstance(item.get("alternates"), list):
-            alternates = [str(a).strip() for a in item["alternates"] if str(a).strip()]
-        hint = (item.get("hint") or "").strip() or None
-        explanation = (item.get("explanation") or "").strip() or None
-
-        extra = {"mode": "gpt", "pos": pos, "alternates": alternates, "hint": hint, "explanation": explanation}
-        db.execute(
-            """INSERT INTO quiz_questions (quiz_id,qtype,prompt,correct,extra)
-               VALUES (?,?,?,?,?)""",
-            (quiz_id, "short", prompt, answer, json.dumps(extra))
-        )
-        used_norm_prompts.add(n)
-
-    # LONG
-    for _ in range(long_need):
-        pos = positions.pop()
-        item = gpt_long.pop(0)
-        req = item.get("required_words", [])
-        prompt = str(item.get("prompt") or (f"Write a single clear sentence using ALL of these words: {', '.join(req)}.")).strip()
-        if not (isinstance(req, list) and req and prompt):
-            raise RuntimeError("Bad long item from GPT")
-        n = _norm_prompt(prompt)
-        if n in used_norm_prompts:
-            raise RuntimeError("Duplicate long prompt from GPT")
-
-        extra = {"required_words": req, "pos": pos}
-        db.execute(
-            """INSERT INTO quiz_questions (quiz_id,qtype,prompt,correct,extra)
-               VALUES (?,?,?,?,?)""",
-            (quiz_id, "long", prompt, json.dumps(req), json.dumps(extra))
-        )
-        used_norm_prompts.add(n)
 
     db.commit()
     return quiz_id
+
 
 # -------------------- Auth --------------------
 @app.route("/login", methods=["GET", "POST"])
@@ -1211,13 +1606,17 @@ def login():
 
     # GET
     return render_template("login.html")
-
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
         username = (request.form.get("username") or "").strip()
         password = (request.form.get("password") or "").strip()
         confirm  = (request.form.get("confirm")  or "").strip()
+
+        # Only these three analytics fields
+        age_raw  = (request.form.get("age") or "").strip()
+        grade    = (request.form.get("grade") or "").strip()
+        gender   = (request.form.get("gender") or "").strip()  # '', 'female', 'male', 'other'
 
         if not username or not password:
             flash("User ID and password are required.", "danger")
@@ -1229,16 +1628,33 @@ def register():
             flash("Passwords do not match.", "danger")
             return redirect(url_for("register"))
 
+        # Normalize inputs
+        try:
+            age = int(age_raw) if age_raw else None
+        except ValueError:
+            age = None
+
+        if gender not in ("female", "male", "other", ""):
+            gender = ""
+
         db = get_db()
         exists = db.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone()
         if exists:
             flash("That User ID is already taken.", "danger")
             return redirect(url_for("register"))
 
-        db.execute(
-            "INSERT INTO users(username, level, xp, password_hash) VALUES(?, ?, ?, ?)",
-            (username, 1, 0, generate_password_hash(password))
-        )
+        db.execute("""
+            INSERT INTO users(username, level, xp, password_hash, age, grade, gender)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            username,
+            1,                # level
+            0,                # xp
+            generate_password_hash(password),
+            age,
+            grade or None,
+            gender or None
+        ))
         db.commit()
 
         session["username"] = username
@@ -1246,6 +1662,8 @@ def register():
         return redirect(url_for("home"))
 
     return render_template("register.html")
+
+
 
 
 @app.route("/logout")
@@ -1825,21 +2243,29 @@ def gpt_generate_story(title: str,
     categories = categories or []
     themes = themes or []
     level_map = {
-        1: ("CEFR A1", "250–400"),
-        2: ("CEFR A2", "350–550"),
-        3: ("CEFR B1", "500–700"),
-        4: ("CEFR B1+", "600–800"),
-        5: ("CEFR B2", "700–900"),
+        1: ("CEFR A1", "550–700"),
+        2: ("CEFR A2", "650–850"),
+        3: ("CEFR B1", "800–1000"),
+        4: ("CEFR B1+", "900–1100"),
+        5: ("CEFR B2", "1000–1200"),
     }
-    level_tag, target_len = level_map.get(int(difficulty or 2), ("CEFR A2", "350–550"))
+    level_tag, target_len = level_map.get(int(difficulty or 2))
 
     if not openai_client:
         return synthesize_story_text(difficulty or 2, title or "Story")
 
+    level_map = {
+        1: ("CEFR A1", "700–1100"),  # was 250–400
+        2: ("CEFR A2", "1000–1500"),  # was 350–550
+        3: ("CEFR B1", "1400–2000"),  # was 500–700
+        4: ("CEFR B1+", "1800–2400"),  # was 600–800
+        5: ("CEFR B2", "2100–2700"),  # was 700–900
+    }
+
     system = (
         "You are an ESL children's story writer. "
         "Output ONLY the story text: the first line must be the exact title, "
-        "then 3–6 short paragraphs separated by blank lines. No extra commentary."
+        "then 9–14 short paragraphs separated by blank lines. No extra commentary."
     )
     user = f"""
 Write an original English short story.
@@ -2021,13 +2447,13 @@ def start_quiz(level):
 
     # Safety net: ensure exactly 16 questions
     if len(qs) < 16:
+        print(len(qs))
         needed = 16 - len(qs)
         positions_taken = {q.get("extra_parsed", {}).get("pos") for q in qs if q.get("extra_parsed")}
         available = [p for p in range(16) if p not in positions_taken]
         filler_used_norm = set()
         for i in range(needed):
             pos = available[i]
-            add_mcq_question_unique(db, quiz_id, level, pos, filler_used_norm)
         db.commit()
         rows = db.execute("SELECT * FROM quiz_questions WHERE quiz_id = ?", (quiz_id,)).fetchall()
         qs = []
@@ -2118,140 +2544,104 @@ def api_quiz_state(quiz_id):
         return {"error":"not-found"}, 404
     return _quiz_state(db, quiz_id)
 # --- API: answer a cell and persist XP/level delta ---
-
-@app.post("/api/quiz/answer")
+@app.route("/api/quiz/answer", methods=["POST"])
 def api_quiz_answer():
-    """
-    Expects JSON:
-      {
-        "quiz_id": <int>,
-        "question_id": <int>,
-        "response": <string>,
-        "confidence": <int 1..5, optional>  // present when confidence popup was shown
-      }
-    Returns (example):
-      {
-        "ok": true,
-        "was_correct": true,
-        "lives": 3,
-        "xp": 40,
-        "lines": 1,
-        "user_level": 2,
-        "user_xp": 120,
-        "correct": [ ...optional positions... ],
-        "explanation": "optional"
-      }
-    """
-    payload = request.get_json(force=True, silent=True) or {}
-    quiz_id      = payload.get("quiz_id")
-    question_id  = payload.get("question_id")
-    response_txt = (payload.get("response") or "").strip()
+    if "username" not in session:
+        return jsonify({"ok": False, "error": "auth required"}), 401
+    username = session["username"]
+    db = get_db()
 
-    # Optional confidence (sent by the quiz page for ~20% of questions)
-    confidence = payload.get("confidence")
+    data = request.get_json(silent=True) or {}
+    quiz_id = int(data.get("quiz_id") or 0)
+    qid     = int(data.get("question_id") or 0)
+    resp    = (data.get("response") or "").strip()
+
+    # Load question (must belong to this quiz)
+    q = db.execute(
+        "SELECT * FROM quiz_questions WHERE id=? AND quiz_id=?",
+        (qid, quiz_id)
+    ).fetchone()
+    if not q:
+        return jsonify({"ok": False, "error": "question not found"}), 404
+
+    qtype = q["qtype"]
+    prompt = q["prompt"]
+    correct_field = q["correct"] or ""
+    extra = {}
     try:
-        if confidence is not None:
-            confidence = int(confidence)
-            if confidence < 1 or confidence > 5:
-                confidence = None
+        extra = json.loads(q["extra"] or "{}")
     except Exception:
-        confidence = None
+        extra = {}
 
-    # ---- VALIDATION ----
-    if quiz_id is None or question_id is None:
-        return jsonify({"ok": False, "error": "quiz_id and question_id are required"}), 400
+    # Helper: normalize text
+    def norm(s: str) -> str:
+        return re.sub(r"\s+", " ", (s or "").strip().lower())
 
-    # ---- YOUR CORRECTNESS LOGIC HERE ----
-    # TODO: Replace this block with your existing check logic.
-    # Example stub:
     was_correct = False
-    explanation = None
-    try:
-        conn = get_db()
-        # Fetch the ground truth from your questions table (example)
-        row = conn.execute("SELECT qtype, correct, explanation FROM Questions WHERE id=?", (question_id,)).fetchone()
-        if row:
-            qtype, correct_raw, ex_raw = row
-            explanation = ex_raw
-            if qtype == "mcq":
-                # correct_raw expected like "A"/"B"/"C"/"D"
-                was_correct = (str(correct_raw).strip().upper() == str(response_txt).strip().upper())
-            elif qtype == "short":
-                # simple normalize match
-                was_correct = (str(correct_raw).strip().lower() == str(response_txt).strip().lower())
-            else:
-                # long: required keywords (JSON array in correct_raw) OR simple contains
-                try:
-                    import json as _json
-                    kws = _json.loads(correct_raw) if correct_raw else []
-                    if isinstance(kws, list) and kws:
-                        ans = response_txt.lower()
-                        was_correct = all(k.lower() in ans for k in kws)
-                    else:
-                        was_correct = (str(correct_raw).strip().lower() in str(response_txt).strip().lower())
-                except Exception:
-                    was_correct = False
-    except Exception as e:
-        app.logger.warning(f"Correctness check failed: {e}")
+    explanation = (extra.get("explanation") or "").strip()
+    hint = (extra.get("hint") or "").strip()
 
-    # ---- UPDATE GAME STATE (XP/LIVES/LINES/LEVEL) ----
-    # Keep your existing logic here. Below is a safe no-op skeleton that you can
-    # replace with your real per-user round state tracking.
-    lives = int(request.cookies.get("lives", 3))
-    xp    = int(request.cookies.get("xp", 0))
-    lines = int(request.cookies.get("lines", 0))
+    if qtype == "mcq":
+        # Expect resp = 'A'|'B'|'C'|'D' (case-insensitive)
+        if resp:
+            letter = str(resp).strip().upper()
+            corr   = str(correct_field).strip().upper()
+            was_correct = (letter == corr)
+
+    elif qtype == "short":
+        gold = norm(correct_field)
+        cand = norm(resp)
+        alts = []
+        if isinstance(extra.get("alternates"), list):
+            alts = [norm(a) for a in extra.get("alternates")[:2] if isinstance(a, str)]
+        was_correct = (cand == gold) or (cand in alts)
+
+    else:  # long
+        # All required words must appear as tokens (case-insensitive)
+        req = extra.get("required_words") or []
+        text = " " + norm(resp) + " "
+        ok = True
+        for w in req:
+            w_norm = norm(w)
+            # simple word-boundary check
+            if not re.search(rf"(^|[\s\W]){re.escape(w_norm)}($|[\s\W])", text):
+                ok = False
+                break
+        was_correct = ok
+
+    # XP / lives / lines bookkeeping:
+    #   +10 XP per correct, -1 life per wrong (server keeps only totals; client handles lines visually)
+    # Persist the answer first
+    db.execute(
+        """
+        INSERT INTO quiz_answers(quiz_id, question_id, response, is_correct, awarded_xp)
+        VALUES(?,?,?,?,?)
+        """,
+        (quiz_id, qid, resp, 1 if was_correct else 0, 10 if was_correct else 0)
+    )
+
+    # Update user's XP/level
+    u = db.execute("SELECT level, xp FROM users WHERE username=?", (username,)).fetchone()
+    cur_level = u["level"] if u else 1
+    cur_xp    = u["xp"] if u else 0
 
     if was_correct:
-        xp += 10
-    else:
-        lives -= 1
+        cur_xp += 10
+    # update level on 100-XP boundaries
+    new_level = max(cur_level, 1 + (cur_xp // 100))
 
-    # Example: compute new profile level/xp (persist however you already do)
-    username = session.get("username") or "guest"
-    try:
-        # Example Users table with total xp/level
-        conn = get_db()
-        # Upsert user total xp
-        conn.execute("""
-            INSERT INTO Users(username, password)
-            VALUES(?, 'pw')
-            ON CONFLICT(username) DO NOTHING;
-        """, (username,))
-        conn.execute("""
-            UPDATE Users SET preferred_war = preferred_war
-        """)  # harmless touch to keep SQLite happy when table has only NOT NULL cols
-        # Suppose you track totals in a separate table or Users has columns user_xp/user_level
-        # Replace these with your actual schema updates.
-    except Exception as e:
-        app.logger.warning(f"User XP/Level mock update skipped: {e}")
+    db.execute("UPDATE users SET xp=?, level=? WHERE username=?", (cur_xp, new_level, username))
+    db.commit()
 
-    # Compute profile numbers (replace with your real persistence)
-    user_total_xp = session.get("user_total_xp", 0) + (10 if was_correct else 0)
-    session["user_total_xp"] = user_total_xp
-    user_level = max(1, (user_total_xp // 100) + 1)
-
-    # ---- STORE ANALYTICS ROW (this powers the admin dashboard) ----
-    try:
-        conn = get_db()
-        conn.execute("""
-            INSERT INTO QuizAnswers(username, quiz_id, question_id, was_correct, confidence)
-            VALUES (?, ?, ?, ?, ?)
-        """, (username, int(quiz_id), int(question_id), 1 if was_correct else 0, confidence))
-        conn.commit()
-    except Exception as e:
-        app.logger.warning(f"QuizAnswers insert failed: {e}")
-
-    # Response payload (you probably add more fields normally)
+    # Return status to client (the client tracks lives/lines locally)
     return jsonify({
         "ok": True,
         "was_correct": was_correct,
-        "lives": lives,
-        "xp": xp,
-        "lines": lines,
-        "user_level": user_level,
-        "user_xp": user_total_xp,
-        "explanation": explanation or None
+        "explanation": explanation or hint or "",
+        "user_level": new_level,
+        "user_xp": cur_xp
     })
+
 # ==== NEW HELPERS (place near your GPT functions) ====
 
 def _is_ambiguous_mcq(item: dict) -> bool:
@@ -2914,13 +3304,238 @@ def _parse_date(s):
     except Exception:
         pass
     return None
-@app.route("/admin/analytics")
-def admin_analytics():
-    _require_admin()
-    conn = get_db()
-    rows = conn.execute("SELECT DISTINCT quiz_id FROM QuizAnswers ORDER BY quiz_id").fetchall()
-    quiz_ids = [r[0] for r in rows]
-    return render_template("admin_analytics.html", quiz_ids=quiz_ids)
+# --- Admin: per-student analytics JSON ---
+# ---------- Admin Analytics (per-student) ----------
+from collections import defaultdict
+from datetime import date
+
+@app.get("/admin/analytics")
+def admin_analytics_page():
+    # Simple guard: only logged-in users can view. (Adjust to your admin policy.)
+    if "username" not in session:
+        return redirect(url_for("login"))
+
+    db = get_db()
+    try:
+        rows = db.execute("SELECT username FROM users ORDER BY username COLLATE NOCASE").fetchall()
+        users = [r["username"] for r in rows] or []
+    except Exception:
+        users = []
+    selected = users[0] if users else None
+    return render_template("admin_analytics.html", users=users, selected_user=selected)
+
+@app.get("/admin/analytics/data")
+def admin_analytics_data():
+    # JSON data for charts
+    if "username" not in session:
+        return jsonify({"error": "auth required"}), 401
+
+    username = (request.args.get("username") or "").strip()
+    if not username:
+        return jsonify({"error": "username is required"}), 400
+
+    db = get_db()
+
+    # ----- KPIs -----
+    # Total quizzes / attempts / accuracy
+    try:
+        qz_rows = db.execute("SELECT id, created_at FROM quizzes WHERE username=?", (username,)).fetchall()
+        quiz_ids = [r["id"] for r in qz_rows]
+        total_quizzes = len(quiz_ids)
+    except Exception:
+        quiz_ids, total_quizzes = [], 0
+
+    # Gather answers for accuracy
+    total_answers = 0
+    total_correct = 0
+    try:
+        if quiz_ids:
+            qmarks = ",".join(["?"] * len(quiz_ids))
+            ans_rows = db.execute(
+                f"SELECT is_correct FROM quiz_answers WHERE quiz_id IN ({qmarks})",
+                quiz_ids
+            ).fetchall()
+            total_answers = len(ans_rows)
+            total_correct = sum(1 for r in ans_rows if int(r["is_correct"]) == 1)
+    except Exception:
+        pass
+
+    overall_accuracy = (total_correct / total_answers) if total_answers else 0.0
+    total_attempts = total_answers  # treats each answer as an attempt for “activity mix”
+
+    # Stories read
+    stories_read = 0
+    try:
+        stories_read = db.execute(
+            "SELECT COUNT(*) AS c FROM story_reads WHERE username=?",
+            (username,)
+        ).fetchone()["c"]
+    except Exception:
+        stories_read = 0
+
+    # New vocab entries as another activity indicator (optional)
+    vocab_new = 0
+    try:
+        vocab_new = db.execute(
+            "SELECT COUNT(*) AS c FROM vocab WHERE username=?",
+            (username,)
+        ).fetchone()["c"]
+    except Exception:
+        vocab_new = 0
+
+    # Total XP
+    total_xp = 0
+    try:
+        row = db.execute("SELECT xp FROM users WHERE username=?", (username,)).fetchone()
+        total_xp = row["xp"] if row else 0
+    except Exception:
+        total_xp = 0
+
+    # ----- Timeseries: last 30 days attempts & accuracy -----
+    # Build date buckets
+    today = date.today()
+    days = [today - timedelta(days=i) for i in range(29, -1, -1)]
+    labels = [d.strftime("%m-%d") for d in days]
+    attempts_by_day = {d.isoformat(): 0 for d in days}
+    correct_by_day  = {d.isoformat(): 0 for d in days}
+
+    try:
+        if quiz_ids:
+            qmarks = ",".join(["?"] * len(quiz_ids))
+            rows = db.execute(
+                f"""
+                SELECT qa.is_correct, qa.created_at
+                FROM quiz_answers qa
+                WHERE qa.quiz_id IN ({qmarks})
+                """,
+                quiz_ids
+            ).fetchall()
+            for r in rows:
+                ts = (r["created_at"] or "")
+                # be tolerant with timestamp parsing
+                dkey = (ts[:10] if isinstance(ts, str) and len(ts)>=10 else today.isoformat())
+                if dkey in attempts_by_day:
+                    attempts_by_day[dkey] += 1
+                    if int(r["is_correct"]) == 1:
+                        correct_by_day[dkey] += 1
+    except Exception:
+        pass
+
+    attempts_series = []
+    accuracy_series = []
+    for d in days:
+        key = d.isoformat()
+        a = attempts_by_day.get(key, 0)
+        c = correct_by_day.get(key, 0)
+        attempts_series.append(a)
+        accuracy_series.append((c / a) if a else 0.0)
+
+    # ----- Accuracy by level -----
+    # If you store level on quizzes table, aggregate; else default single bucket.
+    acc_map = defaultdict(lambda: {"a": 0, "c": 0})
+    try:
+        rows = db.execute(
+            "SELECT q.level, qa.is_correct FROM quizzes q "
+            "JOIN quiz_answers qa ON qa.quiz_id = q.id "
+            "WHERE q.username=?", (username,)
+        ).fetchall()
+        for r in rows:
+            lvl = int(r["level"]) if r["level"] is not None else 1
+            acc_map[lvl]["a"] += 1
+            acc_map[lvl]["c"] += (1 if int(r["is_correct"]) == 1 else 0)
+    except Exception:
+        pass
+
+    lvls = sorted(acc_map.keys()) or [1,2,3,4,5]
+    acc_by_level_labels = [f"L{l}" for l in lvls]
+    acc_by_level_values = [(acc_map[l]["c"] / acc_map[l]["a"]) if acc_map[l]["a"] else 0.0 for l in lvls]
+
+    # ----- Worksheets (4-week cycle) -----
+    # Try to find the newest worksheet cycle for the user and compute unlock/submission.
+    wk_labels = [f"Week {i}" for i in range(1,5)]
+    wk_unlocked = [0,0,0,0]
+    wk_submitted = [0,0,0,0]
+
+    try:
+        row = db.execute(
+            "SELECT id, created_at, payload FROM career_worksheets WHERE username=? ORDER BY id DESC LIMIT 1",
+            (username,)
+        ).fetchone()
+        if row:
+            unlocks = compute_week_unlocks(row["created_at"], weeks=4)
+            for st in unlocks:
+                wk_unlocked[st["week"]-1] = 1 if st["is_unlocked"] else 0
+
+            # If you later store per-week submissions, count them here.
+            # Example (if you create such a table):
+            # sub_rows = db.execute("SELECT week, COUNT(1) c FROM career_submissions WHERE worksheet_id=? GROUP BY week", (row["id"],)).fetchall()
+            # for sr in sub_rows:
+            #     wk_submitted[int(sr["week"])-1] = min(1, sr["c"])
+            # For now, leave submitted as 0s unless you’ve implemented storage.
+    except Exception:
+        pass
+
+    # ----- Stories over time (last 30 days) -----
+    stories_by_day = {d.isoformat(): 0 for d in days}
+    try:
+        rows = db.execute(
+            "SELECT started_at FROM story_reads WHERE username=?",
+            (username,)
+        ).fetchall()
+        for r in rows:
+            ts = (r["started_at"] or "")
+            dkey = (ts[:10] if isinstance(ts, str) and len(ts)>=10 else today.isoformat())
+            if dkey in stories_by_day:
+                stories_by_day[dkey] += 1
+    except Exception:
+        pass
+    stories_series = [stories_by_day[d.isoformat()] for d in days]
+
+    # ----- XP cumulative (roughly by day) -----
+    # If you don’t keep a history, show a flat line at current XP.
+    xp_series = []
+    try:
+        current = total_xp
+        step = (current / max(1, len(days)-1))
+        for i, _ in enumerate(days):
+            xp_series.append(round(step * i))
+    except Exception:
+        xp_series = [0 for _ in days]
+
+    payload = {
+        "kpis": {
+            "total_quizzes": total_quizzes,
+            "overall_accuracy": overall_accuracy,
+            "stories_read": stories_read,
+            "total_xp": total_xp,
+            "total_attempts": total_attempts,
+            "vocab_new": vocab_new
+        },
+        "timeseries": {
+            "labels": labels,
+            "attempts": attempts_series,
+            "accuracy": accuracy_series
+        },
+        "acc_by_level": {
+            "labels": acc_by_level_labels,
+            "values": acc_by_level_values
+        },
+        "worksheets": {
+            "labels": wk_labels,
+            "unlocked": wk_unlocked,
+            "submitted": wk_submitted
+        },
+        "stories": {
+            "labels": labels,
+            "counts": stories_series
+        },
+        "xp": {
+            "labels": labels,
+            "values": xp_series
+        }
+    }
+    return jsonify(payload)
+
 from datetime import datetime, timedelta
 
 def _table_exists(db, name):
@@ -3275,6 +3890,846 @@ def api_admin_analytics():
             "accuracy": conf_accuracy,
         },
     })
+def _simple_sentence(level:int, words:list[str]) -> str:
+    # keep very short for young learners
+    # e.g., ["police","help","city"] -> "The police help the city."
+    w = [w for w in words if isinstance(w, str) and w]
+    if not w: return "This is a simple sentence."
+    if len(w) == 1: return f"I see a {w[0]}."
+    if len(w) == 2: return f"The {w[0]} and {w[1]} work together."
+    return f"The {w[0]} {random.choice(['help','protect','build','cook','drive','teach'])} the {w[1]} in the {w[2]}."
+def generate_career_worksheet_gpt_4w(job: str, level: int = 1, lang: str = "en") -> dict:
+    """
+    Generate 4 weekly worksheets for the given job (police, firefighter, etc.).
+    Each week targets 40–60 minutes with:
+      - Reading: 140–200 words (short, clear sentences, A1–A2)
+      - Vocabulary: 8–10 target words [{word, meaning_ko, example_en}]
+      - Comprehension: 6 short-answer Qs [{q, a}]
+      - MCQ: 6 items (4 options, one correct)
+      - Short blanks: 4–6 one-word answers
+      - Writing: 2 prompts [{required_words: 3–5, prompt}]
+    """
+    import json, time, random
+
+    job = (job or "").strip()
+    level = max(1, min(int(level or 1), 5))
+
+    sys = (
+        "You are generating four weekly kid-friendly English worksheets for Korean EFL elementary learners "
+        "(CEFR A1–A2), ages 7–12. Keep text concrete, short sentences, mostly present tense, and SAFE. "
+        "Return STRICT JSON only (no code fences)."
+    )
+
+    user = {
+        "job": job,
+        "level": level,
+        "lang": lang,
+        "shape": {
+            "weeks": 4,
+            "per_week": {
+                "reading_words": [140, 200],
+                "vocab_count": [8, 10],
+                "comprehension_q": 6,
+                "mcq": 6,
+                "short_blanks": [4, 6],
+                "writing_prompts": 2
+            },
+            "rules": [
+                "Short sentences (8–14 words).",
+                "Mostly present tense; avoid idioms and figurative language.",
+                "Add very short Korean glosses only when helpful.",
+                "Avoid violence, politics, religion, romance.",
+                "MCQs: exactly 4 options; exactly one correct.",
+                "Short blanks: a single best ONE-WORD answer; 1–3 alternates ok."
+            ],
+            "schema": {
+                "job": "lowercase string",
+                "level": "1..5",
+                "weeks": [{
+                    "week": "1..4 (number)",
+                    "title": "Week N • <topic>",
+                    "reading": "140–200 word string",
+                    "vocab": [{"word": "string", "meaning_ko": "string", "example_en": "string"}],
+                    "comprehension": [{"q": "string", "a": "short string"}],
+                    "mcq": [{"prompt": "string", "options": ["A","B","C","D"], "answer_index": 0}],
+                    "short": [{"prompt":"string with ONE blank","answer":"string","alternates":["optional", "..."]}],
+                    "writing": [{"required_words":["w1","w2","w3"], "prompt":"string"}]
+                }]
+            }
+        }
+    }
+
+    client = get_openai()  # use your existing helper
+
+    def _ask(max_retries=2):
+        last = None
+        for i in range(max_retries + 1):
+            try:
+                resp = client.chat.completions.create(
+                    model=OPENAI_MODEL,
+                    temperature=0.4,
+                    messages=[
+                        {"role": "system", "content": sys},
+                        {"role": "user", "content": json.dumps(user)}
+                    ]
+                )
+                return (resp.choices[0].message.content or "").strip()
+            except Exception as e:
+                last = e
+                time.sleep(0.7 * (i + 1))
+        raise last
+
+    raw = _ask()
+    # salvage JSON if model wraps it
+    s, e = raw.find("{"), raw.rfind("}")
+    if s >= 0 and e > s:
+        raw = raw[s:e+1]
+    data = json.loads(raw)
+
+    # ---------- basic cleaners ----------
+    def _int_1_4(x, default):
+        try:
+            v = int(float(str(x).strip()))
+        except Exception:
+            v = default
+        return 1 if v < 1 else 4 if v > 4 else v
+
+    def _clean_mcq(items, need=6):
+        out = []
+        for q in (items if isinstance(items, list) else []):
+            if not isinstance(q, dict):
+                continue
+            prompt = str(q.get("prompt","")).strip()
+            ops = q.get("options", [])
+            if not isinstance(ops, list): ops = []
+            ops = [str(o).strip() for o in ops if str(o).strip()][:4]
+            # pad to 4 options if short
+            while len(ops) < 4:
+                for filler in ("to","in","on","at","with","from"):
+                    if filler not in ops:
+                        ops.append(filler)
+                    if len(ops) == 4: break
+            ai = q.get("answer_index", 0)
+            try: ai = int(ai)
+            except: ai = 0
+            ai = max(0, min(3, ai))
+            out.append({"prompt": prompt or "Choose the correct word.", "options": ops[:4], "answer_index": ai})
+        # ensure at least `need`
+        while len(out) < need:
+            out.append({
+                "prompt": "Choose the correct preposition: I go __ the station.",
+                "options": ["to","in","on","at"], "answer_index": 0
+            })
+        return out[:need]
+
+    def _clean_short(items, min_need=4, max_need=6):
+        out = []
+        for s in (items if isinstance(items, list) else []):
+            if not isinstance(s, dict): continue
+            prompt = str(s.get("prompt","")).strip() or "He walked __ the store."
+            ans = str(s.get("answer","")).strip() or "to"
+            alts = s.get("alternates", [])
+            if not isinstance(alts, list): alts = []
+            out.append({"prompt": prompt, "answer": ans, "alternates": [str(a).strip() for a in alts if str(a).strip()]})
+        # pad
+        base = [
+            {"prompt":"He walked __ the store.","answer":"to","alternates":["into","toward"]},
+            {"prompt":"They meet __ Monday.","answer":"on","alternates":["in","at"]},
+            {"prompt":"The cat is __ the table.","answer":"under","alternates":["below","beneath"]},
+            {"prompt":"We arrived __ 8 p.m.","answer":"at","alternates":["around"]},
+            {"prompt":"Put it __ the box.","answer":"in","alternates":["inside","into"]},
+            {"prompt":"She goes __ bus.","answer":"by","alternates":["on"]}
+        ]
+        i = 0
+        while len(out) < min_need and i < len(base):
+            out.append(base[i]); i += 1
+        return out[:max_need]
+
+    def _clean_vocab(items, need_min=8, need_max=10):
+        out = []
+        for v in (items if isinstance(items, list) else []):
+            if not isinstance(v, dict): continue
+            w = str(v.get("word","")).strip()
+            if not w: continue
+            out.append({
+                "word": w,
+                "meaning_ko": str(v.get("meaning_ko","")).strip(),
+                "example_en": str(v.get("example_en","")).strip()
+            })
+        # pad with safe placeholders if needed
+        fallback = [
+            {"word":"uniform","meaning_ko":"제복","example_en":"Police officers wear a uniform at work."},
+            {"word":"rescue","meaning_ko":"구조하다","example_en":"Firefighters rescue people from danger."},
+            {"word":"community","meaning_ko":"지역사회","example_en":"They help the community every day."},
+            {"word":"safety","meaning_ko":"안전","example_en":"Safety is the most important rule."},
+            {"word":"teamwork","meaning_ko":"팀워크","example_en":"Teamwork makes hard jobs easier."},
+            {"word":"emergency","meaning_ko":"긴급 상황","example_en":"Call 119 in an emergency."},
+            {"word":"equipment","meaning_ko":"장비","example_en":"They check their equipment before work."},
+            {"word":"protect","meaning_ko":"보호하다","example_en":"Officers protect people and places."},
+            {"word":"report","meaning_ko":"보고하다","example_en":"They write a report after each call."},
+            {"word":"signal","meaning_ko":"신호","example_en":"Follow the traffic signal at the street."}
+        ]
+        j = 0
+        while len(out) < need_min and j < len(fallback):
+            out.append(fallback[j]); j += 1
+        return out[:need_max]
+
+    def _clean_comp(items, need=6):
+        out = []
+        for c in (items if isinstance(items, list) else []):
+            if not isinstance(c, dict): continue
+            q = str(c.get("q","")).strip()
+            a = str(c.get("a","")).strip()
+            if q: out.append({"q": q, "a": a})
+        # pad if short
+        while len(out) < need:
+            k = len(out) + 1
+            out.append({"q": f"Q{k}. What is one important duty?", "a": "Answers may vary (e.g., help people)."})
+        return out[:need]
+
+    def _clean_writing(items, need=2):
+        out = []
+        for w in (items if isinstance(items, list) else []):
+            if not isinstance(w, dict): continue
+            req = w.get("required_words", [])
+            if not isinstance(req, list) or not req: continue
+            prompt = str(w.get("prompt") or f"Write one clear sentence using ALL of these words: {', '.join(req)}.").strip()
+            out.append({"required_words": [str(r).strip() for r in req if str(r).strip()][:5], "prompt": prompt})
+        # pad if short
+        base = [
+            {"required_words":["help","team","city"], "prompt":f"Write one sentence about how a {job} helps the city."},
+            {"required_words":["safe","people","work"], "prompt":f"Write one sentence that shows how a {job} keeps people safe."},
+        ]
+        i = 0
+        while len(out) < need and i < len(base):
+            out.append(base[i]); i += 1
+        return out[:need]
+
+    # --------- synthesizers (self-healing when GPT is thin) ---------
+    def _synth_reading(job, vocab, level, target_words=(140, 200)):
+        # build short sentences and weave vocab examples
+        base = [
+            f"This unit is about the job of {job}.",
+            "People in this job help the community every day.",
+            "They work with a team and follow safety rules.",
+            "They start with a plan and check their equipment.",
+            "Clear steps help them do the job well.",
+        ]
+        for v in (vocab or [])[:8]:
+            w = v.get("word", "work")
+            ex = v.get("example_en", f"They often use the word {w} at work.")
+            base.append(ex if 6 <= len(ex.split()) <= 16 else f"They often talk about {w}.")
+        base += [
+            "They talk to people in a simple and kind way.",
+            "This job needs practice, focus, and teamwork.",
+            "They try to keep everyone safe and calm.",
+        ]
+        text = " ".join(base)
+        while len(text.split()) < target_words[0]:
+            text += " They check again and do the next step."
+        return text
+
+    def _synth_comp_from_reading(reading, need=6):
+        stems = [
+            "What is this unit about?",
+            "What do they do every day?",
+            "What helps them do the job well?",
+            "How do they talk to people?",
+            "What do they check before work?",
+            "What does this job need?",
+            "Why are rules important?",
+            "Who do they help?"
+        ]
+        out = []
+        for q in stems:
+            out.append({"q": q, "a": "Answers may vary."})
+            if len(out) >= need: break
+        return out[:need]
+
+    def _synth_mcq_from_vocab(vocab, need=6):
+        out = []
+        options_pool = ["safety","teamwork","report","uniform","signal","rescue","protect","equipment","community"]
+        for v in (vocab or []):
+            word = v.get("word", "")
+            meaning = v.get("meaning_ko", "")
+            if not word: continue
+            opts = [word]
+            for o in options_pool:
+                if o != word and o not in opts:
+                    opts.append(o)
+                if len(opts) == 4: break
+            random.shuffle(opts)
+            ai = opts.index(word) if word in opts else 0
+            out.append({
+                "prompt": f"Choose the word that matches: {meaning or 'meaning'}",
+                "options": opts[:4],
+                "answer_index": ai
+            })
+            if len(out) >= need: break
+        while len(out) < need:
+            out.append({
+                "prompt": "Choose the correct preposition: I go __ the station.",
+                "options": ["to","in","on","at"], "answer_index": 0
+            })
+        return out[:need]
+
+    def _synth_short(need=5):
+        return [
+            {"prompt":"He walked __ the store.","answer":"to","alternates":["into","toward"]},
+            {"prompt":"They meet __ Monday.","answer":"on","alternates":["in","at"]},
+            {"prompt":"The cat is __ the table.","answer":"under","alternates":["below","beneath"]},
+            {"prompt":"We arrived __ 8 p.m.","answer":"at","alternates":["around"]},
+            {"prompt":"Put it __ the box.","answer":"in","alternates":["inside","into"]},
+            {"prompt":"She goes __ bus.","answer":"by","alternates":["on"]},
+        ][:need]
+
+    def _synth_writing(job, level, need=2):
+        bank = [
+            {"required_words":["help","team","city"], "prompt":f"Write one sentence about how a {job} helps the city."},
+            {"required_words":["safe","people","work"], "prompt":f"Write one sentence that shows how a {job} keeps people safe."},
+            {"required_words":["plan","check","equipment"], "prompt":"Write one sentence using these words."},
+        ]
+        return bank[:need]
+
+    # ---------- build cleaned weeks with hard minimums ----------
+    weeks = data.get("weeks", [])
+    if not isinstance(weeks, list): weeks = []
+
+    cleaned = []
+    for idx, w in enumerate(weeks, start=1):
+        w = w if isinstance(w, dict) else {}
+        wk = _int_1_4(w.get("week"), idx)
+        title = str(w.get("title", f"Week {wk} • {job.title()}")).strip() or f"Week {wk}"
+        reading = str(w.get("reading","")).strip()
+
+        vocab = _clean_vocab(w.get("vocab", []))
+        comp  = _clean_comp(w.get("comprehension", []))
+        mcq   = _clean_mcq(w.get("mcq", []), need=6)
+        short = _clean_short(w.get("short", []), min_need=4, max_need=6)
+        writing = _clean_writing(w.get("writing", []), need=2)
+
+        # synthesize when too thin
+        if not reading or len(reading.split()) < 120:
+            reading = _synth_reading(job, vocab, level)
+        if len(vocab) < 8:
+            vocab = _clean_vocab(vocab)  # pads with fallbacks
+        if len(comp) < 6:
+            comp = _synth_comp_from_reading(reading, need=6)
+        if len(mcq) < 6:
+            mcq = _synth_mcq_from_vocab(vocab, need=6)
+        if len(short) < 4:
+            short = _synth_short(need=5)
+        if len(writing) < 2:
+            writing = _synth_writing(job, level, need=2)
+
+        cleaned.append({
+            "week": wk,
+            "title": title,
+            "reading": reading,
+            "vocab": vocab,
+            "comprehension": comp,
+            "mcq": mcq,
+            "short": short,
+            "writing": writing
+        })
+
+    # ensure exactly 4 weeks
+    while len(cleaned) < 4:
+        base = cleaned[-1] if cleaned else {
+            "week": len(cleaned)+1, "title": f"Week {len(cleaned)+1}",
+            "reading":"", "vocab":[], "comprehension":[], "mcq":[], "short":[], "writing":[]
+        }
+        dup = dict(base)
+        dup["week"] = len(cleaned)+1
+        if not dup.get("reading"):
+            dup["reading"] = _synth_reading(job, [], level)
+        if not dup.get("vocab"):
+            dup["vocab"] = _clean_vocab([])
+        if not dup.get("comprehension"):
+            dup["comprehension"] = _synth_comp_from_reading(dup["reading"], need=6)
+        if not dup.get("mcq"):
+            dup["mcq"] = _synth_mcq_from_vocab(dup["vocab"], need=6)
+        if not dup.get("short"):
+            dup["short"] = _synth_short(need=5)
+        if not dup.get("writing"):
+            dup["writing"] = _synth_writing(job, level, need=2)
+        cleaned.append(dup)
+    cleaned = cleaned[:4]
+
+    return {
+        "job": (data.get("job") or job).lower(),
+        "_level": level,
+        "_lang": lang,
+        "weeks": cleaned
+    }
+
+
+@app.route("/career", methods=["GET", "POST"])
+def career():
+    if "username" not in session:
+        return redirect(url_for("login"))
+    username = session["username"]
+
+    if request.method == "POST":
+        job = (request.form.get("job") or "").strip()
+        try:
+            level = int(request.form.get("level") or 1)
+        except:
+            level = 1
+
+        if not job:
+            flash("Please enter a job.", "warning")
+            return render_template("career_form.html")
+
+        # try:
+        ws = generate_career_worksheet_gpt_4w(job, level)
+        # except Exception as e:
+        #     flash(f"Could not generate worksheet: {e}", "danger")
+        #     return render_template("career_form.html")
+
+        db = get_db()
+        cur = db.execute(
+            "INSERT INTO career_worksheets(username, job, level, payload) VALUES(?,?,?,?)",
+            (username, ws["job"], ws["_level"], json.dumps(ws))
+        )
+        db.commit()
+        ws_id = cur.lastrowid
+        # After generation → overview page with locks
+        return redirect(url_for("career_overview", ws_id=ws_id))
+
+    return render_template("career_form.html")
+@app.get("/career/<int:ws_id>/overview")
+def career_overview(ws_id):
+    if "username" not in session:
+        return redirect(url_for("login"))
+    username = session["username"]
+
+    db = get_db()
+    row = db.execute("SELECT id, username, job, level, created_at, payload FROM career_worksheets WHERE id=?", (ws_id,)).fetchone()
+    if not row or row["username"] != username:
+        flash("Worksheet not found.", "danger")
+        return redirect(url_for("career"))
+
+    payload = json.loads(row["payload"])
+    unlocks = compute_week_unlocks(row["created_at"], weeks=4)
+    # Make a lightweight view model
+    weeks_vm = []
+    for st in unlocks:
+        weeks_vm.append({
+            "week": st["week"],
+            "title": payload["weeks"][st["week"]-1].get("title", f"Week {st['week']}"),
+            "unlock_at_str": _fmt_kst(st["unlock_at"]),
+            "is_unlocked": st["is_unlocked"]
+        })
+    return render_template(
+        "career_overview_4w.html",
+        ws_id=row["id"],
+        job=payload.get("job",""),
+        level=payload.get("_level", row["level"]),
+        created_at=row["created_at"],
+        weeks_vm=weeks_vm
+    )
+
+@app.get("/career/<int:ws_id>")
+def career_view(ws_id):
+    if "username" not in session:
+        return redirect(url_for("login"))
+    username = session["username"]
+
+    week = int(request.args.get("week") or 1)
+    week = max(1, min(4, week))
+
+    db = get_db()
+    row = db.execute("SELECT id, username, job, level, created_at, payload FROM career_worksheets WHERE id=?", (ws_id,)).fetchone()
+    if not row or row["username"] != username:
+        flash("Worksheet not found.", "danger")
+        return redirect(url_for("career"))
+
+    payload = json.loads(row["payload"])
+    unlocks = compute_week_unlocks(row["created_at"], weeks=4)
+    st = next(s for s in unlocks if s["week"] == week)
+    if not st["is_unlocked"]:
+        flash(f"Week {week} unlocks at { _fmt_kst(st['unlock_at']) }.", "warning")
+        return redirect(url_for("career_overview", ws_id=ws_id))
+
+    W = payload["weeks"][week-1]
+    return render_template(
+        "career_worksheet_4w.html",
+        ws_id=ws_id,
+        job=payload.get("job", ""),
+        level=payload.get("_level", row["level"]),
+        created_at=row["created_at"],
+        week=week,
+        title=W["title"],
+        reading=W["reading"],
+        sections=W.get("sections", []),
+        mcq=W.get("mcq", []),
+        short=W.get("short", []),
+        vocab=W.get("vocab", []),  # <-- add this
+        comprehension=W.get("comprehension", []),  # <-- and this
+        writing=W.get("writing", [])  # <-- and this
+    )
+
+
+@app.post("/career/<int:ws_id>/submit")
+def career_submit(ws_id):
+    if "username" not in session:
+        return redirect(url_for("login"))
+    username = session["username"]
+    week = int(request.args.get("week") or 1)
+    week = max(1, min(4, week))
+
+    db = get_db()
+    row = db.execute("SELECT id, username, created_at, payload FROM career_worksheets WHERE id=?", (ws_id,)).fetchone()
+    if not row or row["username"] != username:
+        flash("Worksheet not found.", "danger")
+        return redirect(url_for("career"))
+
+    unlocks = compute_week_unlocks(row["created_at"], weeks=4)
+    st = next(s for s in unlocks if s["week"] == week)
+    if not st["is_unlocked"]:
+        flash(f"Week {week} is locked until { _fmt_kst(st['unlock_at']) }.", "warning")
+        return redirect(url_for("career_overview", ws_id=ws_id))
+
+    # ... your grading logic here ...
+    flash(f"Week {week} submitted.", "success")
+    return redirect(url_for("career_overview", ws_id=ws_id))
+# Go to the most recent worksheet's overview, or to the generator form if none exist
+@app.get("/career/latest")
+def career_latest():
+    if "username" not in session:
+        return redirect(url_for("login"))
+    username = session["username"]
+
+    db = get_db()
+    row = db.execute(
+        "SELECT id FROM career_worksheets WHERE username=? ORDER BY id DESC LIMIT 1",
+        (username,)
+    ).fetchone()
+    if row:
+        return redirect(url_for("career_overview", ws_id=row["id"]))
+    # no worksheet yet → send them to the form
+    return redirect(url_for("career"))
+
+def grant_xp(db, username: str, amount: int):
+    if amount <= 0:
+        return 0
+    db.execute("UPDATE users SET xp = COALESCE(xp,0) + ? WHERE username=?", (amount, username))
+    return amount
+
+def _normalize_bool(x):
+    return 1 if x else 0
+
+# === (C) LLM or heuristic quiz generator for a story ===
+# We’ll generate 8 Qs: 6 MCQ + 2 LONG (open answer; correctness = contains all required words)
+from flask import current_app
+
+def generate_story_quiz_from_text(story_title: str, story_text: str) -> dict:
+    """
+    Returns: {"mcq":[{id,prompt,options,answer_index}], "long":[{id,prompt,required_words,hint}]}
+    """
+    # Fallback simple heuristic if no API key or call fails
+    def trivial(text):
+        sent = (text or "").split(".")
+        base = [s.strip() for s in sent if len(s.strip().split()) >= 5][:6]
+        mcq = []
+        for i, s in enumerate(base[:6]):
+            # crude keyword -> option set
+            kw = (s.split()[0] if s else "story").strip(",.")
+            mcq.append({
+                "id": f"m{i+1}",
+                "prompt": f"What is a key word from this sentence? “{s}”",
+                "options": [kw.lower(), "blue", "yesterday", "banana"],
+                "answer_index": 0,
+                "hint": "Scan the sentence."
+            })
+        longq = []
+        longq.append({
+            "id": "l1",
+            "prompt": "Write one short sentence about the story that includes ALL these words.",
+            "required_words": ["the", "story"],
+            "hint": "Keep it simple."
+        })
+        longq.append({
+            "id": "l2",
+            "prompt": "Write a sentence about the main character using ALL these words.",
+            "required_words": ["is", "in"],
+            "hint": "Very short is OK."
+        })
+        return {"mcq": mcq, "long": longq}
+
+    # Try LLM if configured
+    try:
+        import openai
+        openai.api_key = OPENAI_API_KEY
+        sys_msg = "You create short reading-comprehension quizzes for young ESL learners."
+        user_payload = {
+            "task": "Make 8 questions about the story text.",
+            "counts": {"mcq": 6, "long": 2},
+            "rules": [
+                "MCQ: exactly 4 options and the correct answer_index.",
+                "LONG: open question but grade as CORRECT iff the answer contains ALL required_words.",
+                "Use only words/concepts present or directly implied by the story.",
+                "Return ONLY JSON: {mcq:[...], long:[...]}. No markdown."
+            ],
+            "story_title": story_title or "",
+            "story_text": story_text or "",
+            "schemas": {
+                "mcq_item": {"id":"string","prompt":"string","options":["string","string","string","string"],"answer_index":"int","hint":"string"},
+                "long_item":{"id":"string","prompt":"string","required_words":["string"],"hint":"string"}
+            }
+        }
+        resp = openai.ChatCompletion.create(
+            model=os.getenv("OPENAI_MODEL","gpt-4o-mini"),
+            messages=[{"role":"system","content":sys_msg},
+                      {"role":"user","content":json.dumps(user_payload, ensure_ascii=False)}],
+            temperature=0.3
+        )
+        txt = resp["choices"][0]["message"]["content"]
+        data = json.loads(re.search(r"\{(?:[^{}]|(?R))*\}", txt, flags=re.S).group(0))
+        # light validation
+        mcq = [m for m in (data.get("mcq") or []) if isinstance(m, dict) and
+               isinstance(m.get("prompt"), str) and isinstance(m.get("options"), list) and len(m["options"])==4 and isinstance(m.get("answer_index"), int)]
+        longq = [l for l in (data.get("long") or []) if isinstance(l, dict) and
+                 isinstance(l.get("required_words"), list) and 1 <= len(l["required_words"]) <= 4]
+        # assign ids if missing
+        for i,m in enumerate(mcq[:6],1): m.setdefault("id", f"m{i}")
+        for i,l in enumerate(longq[:2],1): l.setdefault("id", f"l{i}")
+        if len(mcq) >= 6 and len(longq) >= 2:
+            return {"mcq": mcq[:6], "long": longq[:2]}
+        return trivial(story_text)
+    except Exception:
+        return trivial(story_text)
+# === (D) Routes: fetch quiz for a story and submit answers ===
+
+@app.route("/api/story/<slug>/quiz", methods=["GET"])
+def api_story_quiz(slug):
+    if "username" not in session:
+        return jsonify({"error":"auth required"}), 401
+    # You probably already load story content when rendering; fetch again or pass via client.
+    # Minimal: accept ?title= and ?content= if you don’t have a story table:
+    title = (request.args.get("title") or "").strip()
+    content = (request.args.get("content") or "").strip()
+    quiz = generate_story_quiz_from_text(title, content)
+    return jsonify(quiz)
+
+@app.route("/api/story_quiz/submit", methods=["POST"])
+def api_story_quiz_submit():
+    if "username" not in session:
+        return jsonify({"error":"auth required"}), 401
+    username = session["username"]
+    data = request.get_json(force=True) or {}
+    slug = (data.get("story_slug") or "").strip()
+
+    mcq_items = data.get("mcq") or []        # [{id, answer_index(int)}]
+    long_items = data.get("long") or []      # [{id, answer_text(str), required_words:[...]}]
+
+    # Grade MCQ
+    correct = 0
+    total = 0
+
+    # Expect client to echo back the quiz structure for grading (simple MVP).
+    # Each mcq item should have: id, answer_index (user), solution_index (server/trusted)
+    for it in mcq_items:
+        try:
+            total += 1
+            if int(it.get("answer_index")) == int(it.get("solution_index")):
+                correct += 1
+        except Exception:
+            pass
+
+    # Grade LONG: correct iff answer contains ALL required words (case-insensitive, word-boundary-ish)
+    def contains_all_words(ans: str, req: list[str]) -> bool:
+        s = " " + (ans or "").lower() + " "
+        return all((" " + str(w or "").lower().strip() + " ") in s for w in req if w)
+
+    for it in long_items:
+        req = it.get("required_words") or []
+        ans = it.get("answer_text") or ""
+        if req:
+            total += 1
+            if contains_all_words(ans, req):
+                correct += 1
+
+    score = 0.0 if total == 0 else round(100.0 * correct / total, 1)
+    passed = score >= 80.0
+
+    # Award once per attempt (no anti-farming here; add guards if you want daily/once)
+    award = 0
+    if passed:
+        db = get_db()
+        award = grant_xp(db, username, 50)   # +50 XP for pass
+        db.execute("""INSERT INTO StoryQuizAttempts(username, story_slug, total, correct, score, passed, awarded_xp)
+                      VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   (username, slug or "-", total, correct, score, _normalize_bool(passed), award))
+        db.commit()
+    else:
+        db = get_db()
+        db.execute("""INSERT INTO StoryQuizAttempts(username, story_slug, total, correct, score, passed, awarded_xp)
+                      VALUES (?, ?, ?, ?, ?, ?, 0)""",
+                   (username, slug or "-", total, correct, score, _normalize_bool(passed)))
+        db.commit()
+
+    return jsonify({"total": total, "correct": correct, "score": score, "passed": passed, "xp_awarded": award})
+def _normalize_bool(b): return 1 if bool(b) else 0
+
+def _user_required():
+    if "username" not in session:
+        return None, (jsonify({"error":"auth required"}), 401)
+    return session["username"], None
+
+def _load_saved_quiz(db, username, slug):
+    row = db.execute(
+        "SELECT quiz_json FROM StoryQuizzes WHERE username=? AND story_slug=?",
+        (username, slug)
+    ).fetchone()
+    return json.loads(row["quiz_json"]) if row else None
+
+def _save_quiz(db, username, slug, quiz_obj):
+    js = json.dumps(quiz_obj, ensure_ascii=False)
+    db.execute("""
+        INSERT INTO StoryQuizzes(username, story_slug, quiz_json)
+        VALUES(?,?,?)
+        ON CONFLICT(username,story_slug)
+        DO UPDATE SET quiz_json=excluded.quiz_json, created_at=CURRENT_TIMESTAMP
+    """, (username, slug, js))
+    db.commit()
+
+def _latest_status(db, username, slug):
+    att = db.execute("""
+        SELECT total, correct, score, passed
+        FROM StoryQuizAttempts
+        WHERE username=? AND story_slug=?
+        ORDER BY id DESC LIMIT 1
+    """, (username, slug)).fetchone()
+    if not att:
+        return {"state":"not_started"}
+    st = {
+        "state": "passed" if att["passed"] else "failed",
+        "score": int(att["correct"]),
+        "total": int(att["total"]),
+        "xp": 0
+    }
+    return st
+@app.get("/api/story_quiz/<slug>/status")
+def api_story_quiz_status(slug):
+    username, err = _user_required()
+    if err: return err
+    db = get_db()
+    return jsonify(_latest_status(db, username, slug))
+
+# (Optional) allow client to POST a simple status blob after local grade
+@app.post("/api/story_quiz/<slug>/status")
+def api_story_quiz_status_set(slug):
+    username, err = _user_required()
+    if err: return err
+    data = request.get_json(silent=True) or {}
+    # store as an attempt so it shows up consistently
+    total = int(data.get("total") or 0)
+    score = int(data.get("score") or 0)
+    passed = 1 if (data.get("state")=="passed") else 0
+    db = get_db()
+    db.execute("""INSERT INTO StoryQuizAttempts(username, story_slug, total, correct, score, passed, awarded_xp)
+                  VALUES (?,?,?,?,?,?,?)""",
+               (username, slug, total, score, float(0 if not total else 100.0*score/max(total,1)), passed, int(data.get("xp") or 0)))
+    db.commit()
+    return jsonify({"ok": True})
+
+@app.get("/api/story_quiz/<slug>/get")
+def api_story_quiz_get(slug):
+    username, err = _user_required()
+    if err: return err
+    db = get_db()
+    q = _load_saved_quiz(db, username, slug)
+    if not q:
+        return jsonify({"error":"not_found"}), 404
+    return jsonify(q)
+
+@app.post("/api/story_quiz/<slug>/generate")
+def api_story_quiz_generate(slug):
+    username, err = _user_required()
+    if err: return err
+    # Accept optional {title, content} from client; if missing, fall back to trivial gen.
+    payload = request.get_json(silent=True) or {}
+    title = (payload.get("title") or request.args.get("title") or "").strip()
+    content = (payload.get("content") or request.args.get("content") or "").strip()
+
+    # Reuse your existing generator:
+    # - You already have generate_story_quiz_from_text(title, content) in app.py.
+    quiz = generate_story_quiz_from_text(title, content)  # safe fallback to trivial inside
+    # Ensure fields used by the front-end exist
+    quiz.setdefault("mcq", [])
+    quiz.setdefault("short", [])
+    quiz.setdefault("long", [])
+
+    db = get_db()
+    _save_quiz(db, username, slug, quiz)
+    return jsonify(quiz)
+
+@app.post("/api/story_quiz/<slug>/submit")
+def api_story_quiz_submit_slug(slug):
+    """
+    Front-end sends: { "answers": { "mcq_0": 1, "short_0": "word", "long_0": "..." } }
+    We grade against the saved quiz for (username, slug).
+    """
+    username, err = _user_required()
+    if err: return err
+    data = request.get_json(force=True) or {}
+    answers = data.get("answers") or {}
+
+    db = get_db()
+    quiz = _load_saved_quiz(db, username, slug)
+    if not quiz:
+        return jsonify({"error":"no_quiz"}), 400
+
+    total = 0
+    correct = 0
+
+    # MCQ
+    for i, it in enumerate(quiz.get("mcq", [])):
+        total += 1
+        key = f"mcq_{i}"
+        user_idx = answers.get(key)
+        try:
+            ok = (user_idx is not None and int(user_idx) == int(it.get("answer_index")))
+        except Exception:
+            ok = False
+        if ok: correct += 1
+
+    # Short
+    def _norm(s):
+        return re.sub(r"\s+", " ", (s or "").strip().lower())
+    for i, it in enumerate(quiz.get("short", [])):
+        total += 1
+        key = f"short_{i}"
+        a = _norm(answers.get(key))
+        gold = _norm(it.get("answer"))
+        alts = [_norm(x) for x in (it.get("alternates") or [])]
+        if a and (a == gold or a in alts): correct += 1
+
+    # Long (must contain all required words)
+    def _tokens(s): return re.findall(r"[a-z]+", (s or "").lower())
+    for i, it in enumerate(quiz.get("long", [])):
+        total += 1
+        key = f"long_{i}"
+        req = [str(w or "").lower() for w in (it.get("required_words") or []) if w]
+        bag = set(_tokens(answers.get(key)))
+        if all(w in bag for w in req): correct += 1
+
+    score_pct = 0.0 if total == 0 else round(100.0 * correct / total, 1)
+    passed = score_pct >= 80.0
+
+    # XP on pass (match your earlier pattern)
+    award = 0
+    if passed:
+        award = grant_xp(get_db(), username, 50)  # or your desired reward
+
+    db.execute("""INSERT INTO StoryQuizAttempts(username, story_slug, total, correct, score, passed, awarded_xp)
+                  VALUES (?,?,?,?,?,?,?)""",
+               (username, slug, total, correct, score_pct, _normalize_bool(passed), award))
+    db.commit()
+
+    return jsonify({"score": correct, "total": total, "passed": passed, "xp_awarded": award})
 
 # -------------------- Main --------------------
 if __name__ == "__main__":

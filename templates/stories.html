@@ -1,81 +1,85 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8"/>
   <title>Stories</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
-  <link rel="icon" href="{{ url_for('static', filename='img/favicon.png') }}" sizes="32x32">
-<link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" sizes="180x180">
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
 
+  <!-- Fonts & Libs -->
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+
+  <link rel="icon" href="{{ url_for('static', filename='img/favicon.png') }}" sizes="32x32">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" sizes="180x180">
 
   <style>
+    /* ===== Design tokens (match Bingo) ===== */
     :root{
-      /* Light theme tokens aligned with nav.html / Home */
-      --ink:#0e1b35;         /* primary text */
-      --muted:#51607d;       /* secondary text */
-      --bg:#ffffff;          /* page background */
-      --bg-soft:#f6f8ff;     /* soft wash */
-      --ring:#cfe2ff;        /* focus ring/border */
-      --brand:#3b82f6;       /* primary blue */
-      --accent:#8f9bff;      /* gradient end */
-      --iris-1:#7aa6ff;      /* highlight 1 */
-      --iris-2:#a1a8ff;      /* highlight 2 */
-      --ok:#16a34a;
-
-      --card-border:#e3eaff;
-      --card-shadow:0 14px 32px rgba(13,31,64,.10);
-      --chip-bg:#ffffff;
-      --chip-br:#e5ebff;
-      --chip-ink:#1e2a4d;
+      --ink:#102039;
+      --muted:#5a6b91;
+      --bg:#fcfdff;
+      --brand:#6d8bff;   /* blueberry */
+      --brand-2:#9fc0ff; /* sky blueberry */
+      --ring:#dbe6ff;
+      --card:#ffffff;
+      --border:#e8eeff;
+      --shadow-1:0 10px 26px rgba(16,32,57,.08);
+      --shadow-2:0 20px 46px rgba(16,32,57,.14);
+      --ok:#22c55e;
     }
-
     html,body{height:100%}
     body{
-      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-      color:var(--ink); background:var(--bg);
-      /* Soft color washes + faint grid to reduce the “plain white” feel */
-      background-image:
-        radial-gradient(38vmax 38vmax at 12% 6%, #eef4ff 0%, transparent 70%),
-        radial-gradient(34vmax 34vmax at 88% 0%, #f3f6ff 0%, transparent 70%),
-        radial-gradient(30vmax 30vmax at 10% 90%, #f7faff 0%, transparent 70%),
-        linear-gradient(0deg, transparent 0%, transparent 96%, #eef3ff 96%),
-        repeating-linear-gradient(90deg, transparent 0 39px, #0e1b3511 39px 40px);
+      font-family: Nunito, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      color:var(--ink);
+      background:
+        radial-gradient(38vmax 38vmax at 8% 6%, #eef3ff 0%, transparent 65%),
+        radial-gradient(34vmax 34vmax at 92% -6%, #f7f8ff 0%, transparent 70%),
+        radial-gradient(30vmax 30vmax at 15% 92%, #f9fbff 0%, transparent 70%),
+        var(--bg);
       background-attachment: fixed;
     }
+/*    .container{ max-width:1080px; }*/
 
-    /* Section header ribbon (color key point) */
-    .section-head{
-      position:relative; border:1px solid var(--card-border);
-      background: linear-gradient(180deg,#fff,#f8faff);
-      border-radius:16px; padding:14px 16px; margin-bottom:14px;
-      box-shadow: var(--card-shadow);
+    /* ===== Section header (cheerful) ===== */
+    .hero{
+      position:relative; overflow:hidden; isolation:isolate;
+      border:1px solid var(--border); border-radius:22px; padding:22px;
+      background: linear-gradient(180deg, #ffffff 0%, #f6f8ff 100%);
+      box-shadow: var(--shadow-2);
     }
-    .section-head::before{
-      content:""; position:absolute; left:0; top:0; bottom:0; width:8px;
-      background: linear-gradient(180deg, var(--brand), var(--accent));
-      border-top-left-radius:16px; border-bottom-left-radius:16px;
+    .hero::before{
+      content:""; position:absolute; right:-70px; top:-70px; width:280px; height:280px; border-radius:50%;
+      background:radial-gradient(circle at 30% 30%, #e6eeff, transparent 60%); z-index:-1;
     }
-    .section-title{
-      margin:0 0 2px 0; font-weight:900; letter-spacing:.2px;
-      background: linear-gradient(90deg, #0e1b35, #2a3a70);
-      -webkit-background-clip:text; background-clip:text; color:transparent;
-      font-size: clamp(18px, 2.4vw, 20px);
+    .hero::after{
+      content:""; position:absolute; left:-80px; bottom:-80px; width:320px; height:320px; rotate:18deg;
+      background: repeating-linear-gradient(45deg, #fff0 0 12px, #eef3ff 12px 24px);
+      border-radius:24px; z-index:-1;
     }
-    .section-sub{ color:var(--muted); }
+    .kicker{
+      display:inline-flex; align-items:center; gap:.5rem;
+      padding:.32rem .72rem; border-radius:999px;
+      font-weight:900; font-size:.8rem; letter-spacing:.2px;
+      color:var(--ink); background:#fff; border:1px solid var(--border);
+      box-shadow: var(--shadow-1);
+    }
+    .kicker i{ color:var(--brand) }
+    .hero-title{
+      font-family: Fredoka, Nunito, system-ui, sans-serif;
+      font-weight:800; letter-spacing:.2px; color:#0f1a33; margin:.55rem 0 .1rem;
+    }
+    .hero-sub{ color:var(--muted) }
 
-    /* Search */
+    /* ===== Search card ===== */
     .search-card{
-      border: 1px solid var(--card-border);
-      background: linear-gradient(180deg, #fff, #f8faff);
-      border-radius:16px; box-shadow: var(--card-shadow);
-      padding: 14px;
+      margin-top:14px;
+      border:1px solid var(--border); border-radius:18px; padding:14px;
+      background: linear-gradient(180deg,#fff,#f7f9ff);
+      box-shadow: var(--shadow-1);
     }
     .search-wrap{
-      display:flex; gap:10px; align-items:center;
-      background: #ffffff; border:1px solid var(--card-border);
-      border-radius:999px; padding:8px 12px;
+      display:flex; gap:10px; align-items:center; padding:10px 12px;
+      border:1px solid var(--border); border-radius:999px; background:#fff;
       box-shadow: inset 0 0 0 2px #f1f5ff;
       transition: box-shadow .12s ease, border-color .12s ease;
     }
@@ -84,277 +88,263 @@
     }
     .search-input{
       border:none; background:transparent; color:var(--ink); width:100%;
-      outline:none; padding:2px 6px; font-size:0.98rem;
+      outline:none; padding:2px 6px; font-size:1rem;
     }
-
     .btn-ghost{
-      border-radius:999px; border:1px solid var(--card-border);
+      border-radius:14px; border:1px solid var(--border);
       background: linear-gradient(180deg,#fff,#f7faff);
-      color:#0e1b35; font-weight:800;
-      padding:.48rem .95rem; font-size:.92rem;
+      color:#0e1b35; font-weight:900; padding:.55rem 1rem;
       box-shadow: 0 8px 18px rgba(13,31,64,.08);
       transition: transform .12s ease, filter .12s ease, box-shadow .12s ease;
     }
     .btn-ghost:hover{ filter:brightness(1.03); transform: translateY(-1px); box-shadow: 0 14px 24px rgba(13,31,64,.12); }
-    .btn-ghost:focus-visible{ outline:none; box-shadow: 0 0 0 .25rem #cfe2ffcc; }
 
-    .toggle-adv{
-      color:#334b82; text-decoration:none; font-size:.9rem; font-weight:800;
-    }
-    .toggle-adv:hover{ color:#1a2b55; }
     details.adv{ margin-top:10px; }
-
     .adv .form-control, .adv .form-select{
-      background:#fff; border:1px solid var(--card-border); color:var(--ink);
-      height: 38px; padding: .25rem .5rem; font-size:.92rem; border-radius:12px;
+      background:#fff; border:1px solid var(--border); color:var(--ink);
+      height: 40px; padding: .35rem .6rem; font-size:.95rem; border-radius:12px;
     }
-    .adv label{ color:#5a6a8f; font-size:.8rem; margin-bottom:4px; font-weight:800; }
+    .adv label{ color:#5a6a8f; font-size:.82rem; margin-bottom:4px; font-weight:800; }
 
-    /* Book tiles (bright, with stronger accents) */
-    .book-tile{
+    /* ===== Story card (Option 1: soft rounded rectangle) ===== */
+    .story-card{
       display:block; text-decoration:none; color:inherit;
-      border:1px solid var(--card-border); border-radius:14px;
+      position:relative; overflow:hidden; height:100%;
+      border:1px solid #e7edff; border-radius:20px; padding:14px 16px 16px 18px;
       background:
-        linear-gradient(180deg, #ffffff, #f7faff);
-      padding:12px 14px 12px 18px;
-      position:relative; overflow:hidden;
-      transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
-      box-shadow: 0 10px 22px rgba(13,31,64,.07);
+        radial-gradient(140px 120px at 110% -10%, #eff3ff 0%, transparent 65%),
+        linear-gradient(180deg,#ffffff 0%, #f7f9ff 100%);
+      box-shadow: 0 12px 30px rgba(15,26,51,.08);
+      transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
     }
-    .book-tile:hover{
-      transform: translateY(-2px);
+    .story-card:hover{
+      transform: translateY(-3px);
+      box-shadow: 0 18px 44px rgba(15,26,51,.12);
       border-color:#d9e6ff;
-      box-shadow: 0 18px 34px rgba(13,31,64,.12);
     }
-    /* Accent spine + corner glow (key color point) */
-    .book-tile::before{
-      content:""; position:absolute; left:0; top:0; bottom:0; width:8px;
-      background: linear-gradient(180deg, var(--brand), var(--accent));
+    .story-card::before{
+      /* accent spine like Bingo levels */
+      content:""; position:absolute; inset:0 auto 0 0; width:8px; opacity:.95;
+      background:linear-gradient(180deg, var(--brand), var(--brand-2));
     }
-    .book-tile::after{
-      content:""; position:absolute; right:-30px; top:-30px; width:140px; height:140px; border-radius:50%;
-      background: radial-gradient(closest-side, #a9b4ff33, transparent 65%);
-      filter: blur(8px);
+    .tile-head{
+      display:flex; align-items:flex-start; gap:10px; margin-bottom:6px;
     }
+    .sticker{
+      flex:0 0 40px; height:40px; border-radius:12px;
+      display:grid; place-items:center; font-size:20px;
+      background:linear-gradient(135deg,#ffffff,#eef3ff);
+      border:1px solid #e6ecff; color:#0f1a33;
+      box-shadow:0 8px 18px rgba(16,32,57,.10);
+    }
+    .st-title{
+      margin:0; font: 800 18px/1.25 "Fredoka", Nunito, system-ui, sans-serif; color:#0e1b35;
+    }
+    .st-phrase{ color:#5a678d; font-weight:800; font-size:.92rem; margin-top:2px; }
 
-    .tile-title{ font-weight:900; color:#0f1a33; line-height:1.25; font-size:1.02rem; margin-bottom:4px; }
-    .tile-author{ color:var(--muted); font-size:.9rem; margin-bottom:10px; }
-
+    .meta{
+      display:flex; gap:6px; flex-wrap:wrap; margin:10px 0 8px;
+    }
     .chip{
-      display:inline-flex; align-items:center; gap:6px; padding:.2rem .6rem; border-radius:999px;
-      background:var(--chip-bg); border:1px solid var(--chip-br); color:var(--chip-ink);
-      font-weight:900; font-size:.75rem;
-      box-shadow: 0 2px 0 #eaf0ff;
+      display:inline-flex; align-items:center; gap:6px; padding:.25rem .6rem; border-radius:999px;
+      background:#fff; border:1px solid var(--border); color:#23345e;
+      font-weight:900; font-size:.78rem; box-shadow: 0 2px 0 #eaf0ff;
     }
-    .chip i{ font-size:.9rem; }
-    .meta-stack{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
-
     .cats{ display:flex; gap:6px; flex-wrap:wrap; }
     .cat{
-      font-size:.72rem; color:#1f2b46; border:1px dashed var(--card-border);
-      padding:.1rem .5rem; border-radius:999px; background:#fff; font-weight:700;
+      font-size:.75rem; color:#1f2b46; border:1px dashed var(--border);
+      padding:.12rem .55rem; border-radius:999px; background:#fff; font-weight:800;
     }
-    /* Tiny variation so tags feel lively */
     .cats .cat:nth-child(3n+1){ background:#f2f7ff; border-color:#dbe7ff; }
     .cats .cat:nth-child(3n+2){ background:#f7f4ff; border-color:#e6e1ff; }
     .cats .cat:nth-child(3n+3){ background:#fff6ef; border-color:#ffe7d1; }
 
-    .tile-row{ display:flex; align-items:start; gap:12px; }
-    .arrow{ margin-left:auto; color:#1f2b46; opacity:.65; transition: transform .12s ease, opacity .12s ease; }
-    .book-tile:hover .arrow{ transform: translateX(3px); opacity:1; }
+    .go{
+      margin-left:auto; display:inline-flex; align-items:center; gap:.45rem;
+      font: 800 15px/1 "Fredoka", Nunito, system-ui, sans-serif;
+      border-radius:14px; border:0; padding:.48rem .8rem;
+      background: linear-gradient(90deg, var(--brand), var(--brand-2));
+      color:#0f1a33 !important; text-decoration:none;
+      box-shadow: 0 10px 22px rgba(109,139,255,.28);
+      transition: transform .12s ease;
+    }
+    .go:hover{ transform: translateY(-1px); }
 
     /* Empty state */
-    .empty-note{
-      color:var(--muted);
-      background: linear-gradient(180deg, #fff, #f7faff);
-      border:1px dashed var(--card-border); border-radius:14px; padding:16px;
-      text-align:center; font-weight:700;
+    .empty{
+      color:var(--muted); text-align:center; font-weight:800;
+      border:1px dashed var(--border); border-radius:18px; padding:18px;
+      background: linear-gradient(180deg,#fff,#f7f9ff);
       box-shadow: 0 10px 24px rgba(13,31,64,.06);
     }
 
-    /* Loader (light) */
+    /* Pager (kid-friendly) */
+    .pagination{ --bs-pagination-border-color: var(--border); }
+    .pagination .page-link{
+      border:1px solid var(--border);
+      background:#fff; color:var(--ink); font-weight:900; border-radius:12px;
+      padding:.55rem .9rem; box-shadow:0 6px 14px rgba(13,31,64,.06);
+      transition:.15s;
+    }
+    .pagination .page-item.active .page-link{
+      background: linear-gradient(90deg, var(--brand), var(--brand-2));
+      color:#0f1a33; border-color:transparent; box-shadow:0 8px 18px rgba(109,139,255,.28);
+    }
+    .pagination .page-link:hover{ transform: translateY(-1px); }
+
+    /* Loader overlay (re-usable) */
     .page-loader {
       position: fixed; inset: 0; display: none; place-items: center;
       background:
         radial-gradient(900px 600px at 90% -10%, rgba(110,168,254,.18), transparent 60%),
         radial-gradient(900px 600px at 10% 110%, rgba(143,155,255,.18), transparent 60%),
-        rgba(255, 255, 255, .85);
+        rgba(255,255,255,.85);
       z-index: 2000; backdrop-filter: blur(6px);
     }
     .page-loader.show { display: grid; }
     .loader-card {
       width: min(460px, 88vw);
-      border: 1px solid var(--card-border);
-      border-radius: 14px; padding: 18px 18px 16px;
+      border: 1px solid var(--border);
+      border-radius: 18px; padding: 18px 18px 16px;
       background: linear-gradient(180deg, #fff, #f7faff);
       box-shadow: 0 20px 50px rgba(13,31,64,.10);
       text-align: center; color: var(--ink);
     }
     .loader-title { font-weight: 900; letter-spacing: .2px; }
-    .loader-sub { color:var(--muted); font-size:.92rem; }
-    .loader-bar { height: 10px; background: #eef3ff; border:1px solid var(--card-border); border-radius: 999px; overflow: hidden; margin-top: 10px; }
-    .loader-bar > div { height: 100%; width: 0%; background: linear-gradient(90deg, var(--brand), var(--accent)); transition: width .12s linear; }
+    .loader-sub { color:var(--muted); font-size:.95rem; }
+    .loader-bar { height: 10px; background: #eef3ff; border:1px solid var(--border); border-radius: 999px; overflow: hidden; margin-top: 10px; }
+    .loader-bar > div { height: 100%; width: 0%; background: linear-gradient(90deg, var(--brand), var(--brand-2)); transition: width .12s linear; }
     .loader-pct { font-weight: 900; margin-top: 8px; color:#1c2a4a; }
-
-    /* Custom pagination styling */
-.custom-pagination .page-item {
-  margin: 0 4px;
-}
-
-.custom-pagination .page-link {
-  border: 1px solid var(--card-border);
-  background: #fff;
-  color: var(--ink);
-  font-weight: 700;
-  border-radius: 10px;
-  padding: 8px 14px;
-  box-shadow: 0 4px 10px rgba(13,31,64,.05);
-  transition: all 0.15s ease;
-}
-
-.custom-pagination .page-link:hover {
-  background: linear-gradient(180deg, var(--brand), var(--accent));
-  color: rgba(59,130,246,1);
-  border-color: var(--brand);
-}
-
-.custom-pagination .page-item.active .page-link {
-  background: linear-gradient(180deg, var(--brand), var(--accent));
-  color: rgba(59,130,246,1);
-  border-color: var(--brand);
-  box-shadow: 0 6px 16px rgba(59,130,246,.3);
-}
-
-.custom-pagination .page-item.disabled .page-link {
-  color: var(--muted);
-  background: #f7f9ff;
-  border-color: var(--card-border);
-  pointer-events: none;
-  box-shadow: none;
-}
-
-.custom-pagination .page-link i {
-  font-size: 1rem;
-  line-height: 1;
-}
-
   </style>
 </head>
 <body>
   {% include 'nav.html' %}
 
   <div class="container pb-5 mt-4">
-    <!-- Section header (adds a color accent “key point”) -->
-    <div class="section-head">
-      <div class="section-title">Stories</div>
-      <div class="section-sub">Browse by keyword, category, theme, age, or difficulty.</div>
-    </div>
+    <!-- Header -->
+    <div class="hero">
+      <span class="kicker"><i class="bi bi-stars"></i> Story time</span>
+      <h1 class="h3 hero-title">Stories</h1>
+      <div class="hero-sub">Find a tale, meet new words, and <b>grow your reading superpowers!</b></div>
 
-    <!-- Search -->
-    <div class="search-card mb-4">
-      <form method="get" action="{{ url_for('stories') }}">
-        <div class="d-flex gap-2 align-items-center">
-          <div class="flex-grow-1 search-wrap">
-            <i class="bi bi-search" style="color:#5d6d95;"></i>
-            <input class="search-input" name="q" value="{{ q or '' }}" placeholder="Search stories by title, keyword, or theme…">
+      <!-- Search -->
+      <div class="search-card">
+        <form method="get" action="{{ url_for('stories') }}">
+          <div class="d-flex gap-2 align-items-center">
+            <div class="flex-grow-1 search-wrap">
+              <i class="bi bi-search" style="color:#5d6d95;"></i>
+              <input class="search-input" name="q" value="{{ q or '' }}" placeholder="Search by title, keyword, or theme…"/>
+            </div>
+            <button class="btn-ghost" type="submit"><i class="bi bi-sliders2-vertical me-1"></i>Search</button>
           </div>
-          <button class="btn-ghost" type="submit"><i class="bi bi-sliders2-vertical me-1"></i>Search</button>
-        </div>
 
-        <details class="adv">
-          <summary class="mt-2"><a class="toggle-adv" href="javascript:void(0)">More filters</a></summary>
-          <div class="row g-2 mt-1">
-            <div class="col-6 col-md-3">
-              <label class="form-label">Category</label>
-              <input class="form-control" name="category" value="{{ category or '' }}" placeholder="Animals">
+          <details class="adv">
+            <summary class="mt-2" style="font-weight:900;color:#2b3b6f;cursor:pointer">More filters</summary>
+            <div class="row g-2 mt-1">
+              <div class="col-6 col-md-3">
+                <label class="form-label">Category</label>
+                <input class="form-control" name="category" value="{{ category or '' }}" placeholder="Animals"/>
+              </div>
+              <div class="col-6 col-md-3">
+                <label class="form-label">Theme</label>
+                <input class="form-control" name="theme" value="{{ theme or '' }}" placeholder="Friendship"/>
+              </div>
+              <div class="col-6 col-md-3">
+                <label class="form-label">Age</label>
+                <input type="number" min="3" max="18" name="age" value="{{ age or '' }}" class="form-control" placeholder="10"/>
+              </div>
+              <div class="col-6 col-md-3">
+                <label class="form-label">Difficulty</label>
+                <select name="difficulty" class="form-select">
+                  <option value="" {% if not difficulty %}selected{% endif %}>Any</option>
+                  {% for d in range(1,6) %}
+                    <option value="{{ d }}" {% if difficulty==d %}selected{% endif %}>{{ d }}</option>
+                  {% endfor %}
+                </select>
+              </div>
             </div>
-            <div class="col-6 col-md-3">
-              <label class="form-label">Theme</label>
-              <input class="form-control" name="theme" value="{{ theme or '' }}" placeholder="Friendship">
-            </div>
-            <div class="col-6 col-md-3">
-              <label class="form-label">Age</label>
-              <input type="number" min="3" max="18" name="age" value="{{ age or '' }}" class="form-control" placeholder="10">
-            </div>
-            <div class="col-6 col-md-3">
-              <label class="form-label">Difficulty</label>
-              <select name="difficulty" class="form-select">
-                <option value="" {% if not difficulty %}selected{% endif %}>Any</option>
-                {% for d in range(1,6) %}
-                  <option value="{{ d }}" {% if difficulty==d %}selected{% endif %}>{{ d }}</option>
-                {% endfor %}
-              </select>
-            </div>
-          </div>
-        </details>
-      </form>
+          </details>
+        </form>
+      </div>
     </div>
 
     <!-- Results -->
-    <div class="row g-2 g-md-3">
+    <div class="row g-3 mt-3">
       {% for s in items %}
-        <div class="col-12 col-sm-6 col-lg-4">
-          <a class="book-tile read-link" href="{{ url_for('read_story', slug=s.slug) }}">
-            <div class="tile-row">
-              <div class="w-100">
-                <div class="tile-title">{{ s.title }}</div>
-                <div class="tile-author">by {{ s.author }}</div>
-
-                <div class="meta-stack">
-                  <span class="chip"><i class="bi bi-people"></i> Age {{ s.age_min }}–{{ s.age_max }}</span>
-                  <span class="chip"><i class="bi bi-graph-up"></i> Diff {{ s.difficulty }}</span>
-                </div>
-
-                {% if s.categories %}
-                  <div class="cats">
-                    {% for c in s.categories[:3] %}
-                      <span class="cat">{{ c }}</span>
-                    {% endfor %}
-                  </div>
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="story-card read-link" href="{{ url_for('read_story', slug=s.slug) }}">
+          <div class="tile-head">
+            <div class="sticker" aria-hidden="true">
+              <i class="bi {% if s.category_icon %}{{ s.category_icon }}{% else %}bi-book{% endif %}"></i>
+            </div>
+            <div class="w-100">
+              <h3 class="st-title">{{ s.title }}</h3>
+              <div class="st-phrase">
+                {% if s.tagline %}
+                  {{ s.tagline }}
+                {% else %}
+                  {% set funlines = [
+                    "Let’s explore!",
+                    "Ready, set, read!",
+                    "Adventure time!",
+                    "Spin the story!",
+                    "Zoom into fun!"
+                  ] %}
+                  {{ funlines[loop.index0 % funlines|length] }}
                 {% endif %}
               </div>
-              <i class="bi bi-arrow-right-short arrow fs-4"></i>
             </div>
-          </a>
-        </div>
+          </div>
+
+          <div class="meta">
+            <span class="chip"><i class="bi bi-person"></i> Age {{ s.age_min }}–{{ s.age_max }}</span>
+            <span class="chip"><i class="bi bi-graph-up"></i> Difficulty {{ s.difficulty }}</span>
+          </div>
+
+          {% if s.categories %}
+          <div class="cats mb-2">
+            {% for c in s.categories[:4] %}
+              <span class="cat">{{ c }}</span>
+            {% endfor %}
+          </div>
+          {% endif %}
+
+          <div class="d-flex align-items-center mt-1">
+            <span class="text-muted small">~{{ (s.read_minutes or 5) }} min read</span>
+            <span class="ms-auto go">Read <i class="bi bi-arrow-right-short fs-5"></i></span>
+          </div>
+        </a>
+      </div>
       {% endfor %}
 
       {% if not items %}
-        <div class="col-12">
-          <div class="empty-note"><i class="bi bi-search"></i> No stories found. Try a different search.</div>
-        </div>
+      <div class="col-12">
+        <div class="empty"><i class="bi bi-search-heart me-1"></i> No stories found. Try another keyword or filter.</div>
+      </div>
       {% endif %}
     </div>
-{% if total_pages > 1 %}
-<nav aria-label="Stories pages" class="mt-4">
-  <ul class="pagination justify-content-center custom-pagination">
-    <li class="page-item {% if page == 1 %}disabled{% endif %}">
-      <a class="page-link"
-         href="{{ url_for('stories', q=q, category=category, theme=theme, age=age, difficulty=difficulty, page=page-1) }}"
-         aria-label="Previous">
-         <i class="bi bi-chevron-left"></i>
-      </a>
-    </li>
 
-    {% for p in range(1, total_pages+1) %}
-      <li class="page-item {% if p == page %}active{% endif %}">
-        <a class="page-link"
-           href="{{ url_for('stories', q=q, category=category, theme=theme, age=age, difficulty=difficulty, page=p) }}">{{ p }}</a>
-      </li>
-    {% endfor %}
-
-    <li class="page-item {% if page == total_pages %}disabled{% endif %}">
-      <a class="page-link"
-         href="{{ url_for('stories', q=q, category=category, theme=theme, age=age, difficulty=difficulty, page=page+1) }}"
-         aria-label="Next">
-         <i class="bi bi-chevron-right"></i>
-      </a>
-    </li>
-  </ul>
-</nav>
-{% endif %}
-
-
+    {% if total_pages > 1 %}
+    <nav aria-label="Story pages" class="mt-4">
+      <ul class="pagination justify-content-center">
+        <li class="page-item {% if page == 1 %}disabled{% endif %}">
+          <a class="page-link" href="{{ url_for('stories', q=q, category=category, theme=theme, age=age, difficulty=difficulty, page=page-1) }}" aria-label="Previous">
+            <i class="bi bi-chevron-left"></i>
+          </a>
+        </li>
+        {% for p in range(1, total_pages+1) %}
+        <li class="page-item {% if p == page %}active{% endif %}">
+          <a class="page-link" href="{{ url_for('stories', q=q, category=category, theme=theme, age=age, difficulty=difficulty, page=p) }}">{{ p }}</a>
+        </li>
+        {% endfor %}
+        <li class="page-item {% if page == total_pages %}disabled{% endif %}">
+          <a class="page-link" href="{{ url_for('stories', q=q, category=category, theme=theme, age=age, difficulty=difficulty, page=page+1) }}" aria-label="Next">
+            <i class="bi bi-chevron-right"></i>
+          </a>
+        </li>
+      </ul>
+    </nav>
+    {% endif %}
   </div>
 
   <!-- Loader -->
@@ -367,7 +357,6 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     (function(){
       const overlay = document.getElementById('page-loader');
@@ -386,22 +375,19 @@
         tick();
       }
 
-      function startLoaderAndGo(url){
+      function go(url){
         if (!overlay) { window.location.href = url; return; }
         overlay.classList.add('show');
         overlay.setAttribute('aria-hidden','false');
         const target = 72 + Math.floor(Math.random() * 6);
-        animateTo(target, () => {
-          try { sessionStorage.setItem('loaderStart', String(target)); } catch(e){}
-          setTimeout(() => { window.location.href = url; }, 120);
-        });
+        animateTo(target, () => { setTimeout(() => { window.location.href = url; }, 120); });
       }
 
       document.addEventListener('click', (e) => {
         const a = e.target.closest('a.read-link');
         if (!a) return;
         e.preventDefault();
-        startLoaderAndGo(a.getAttribute('href'));
+        go(a.getAttribute('href'));
       });
     })();
   </script>

@@ -5,6 +5,9 @@
   <meta charset="UTF-8" />
   <title>Achievements</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Playful, readable fonts -->
+
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
   <link rel="icon" href="{{ url_for('static', filename='img/favicon.png') }}" sizes="32x32">
@@ -12,37 +15,62 @@
 
   <style>
     :root{
-      --ink:#0e1b35; --muted:#4b5567; --bg:#ffffff; --bg-soft:#f7f9ff;
-      --grid:#0e1b3514; --brand:#3b82f6; --accent:#8f9bff; --ring:#cfe2ff;
-      --ok:#22c55e; --gold:#f59e0b; --bad:#ef4444;
+      /* Playful pastel palette to match story page */
+      --ink:#0f1a33;
+      --muted:#6e7494;
+      --bg:#ffffff;
+      --bg-wash-1:#fff7f1;  /* peach */
+      --bg-wash-2:#f0f7ff;  /* sky */
+      --bg-wash-3:#f7fff6;  /* mint */
+
+      --paper:#fffdf5;
+      --paper-br:#f2eede;
+
+      --brand:#ff8db3;    /* strawberry */
+      --brand-2:#7acbff;  /* sky */
+      --brand-3:#7ee0a8;  /* mint */
+      --brand-4:#ffd86b;  /* sunshine */
+
+      --ring:#ffdca8;
+
+      --ok:#16a34a;
+      --gold:#f59e0b;
+      --bad:#ef4444;
     }
+
     html,body{height:100%}
     body{
-      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-      color:var(--ink); background:var(--bg);
-      background-image:
-        radial-gradient(36vmax 36vmax at 12% 6%, #eef4ff 0%, transparent 70%),
-        radial-gradient(32vmax 32vmax at 88% 0%, #f3f6ff 0%, transparent 70%),
-        radial-gradient(30vmax 30vmax at 10% 90%, #f7faff 0%, transparent 70%);
+      font-family: Nunito, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      color:var(--ink);
+      background:
+        radial-gradient(60vmax 40vmax at 8% 0%, var(--bg-wash-2) 0%, transparent 65%),
+        radial-gradient(60vmax 40vmax at 92% 4%, var(--bg-wash-1) 0%, transparent 65%),
+        radial-gradient(36vmax 28vmax at 50% 100%, var(--bg-wash-3) 0%, transparent 70%),
+        #fff;
       background-attachment: fixed;
     }
 
+    /* ===== Header ===== */
     .page-header{
-      background: linear-gradient(180deg,#fff,#f7faff);
-      border:1px solid #e6ecff; border-radius:20px; padding:24px;
-      box-shadow:0 18px 44px rgba(13,31,64,.08); position:relative;
+      background: linear-gradient(180deg,#ffffff,#fbfcff);
+      border:1px solid #f0f2fb; border-radius:22px; padding:22px;
+      box-shadow:0 16px 44px rgba(52,90,160,.10); position:relative;
     }
     .page-header::after{
       content:""; position:absolute; left:20px; right:20px; bottom:-1px; height:2px;
-      background:linear-gradient(90deg,transparent,#cfe0ff,#e0e7ff,transparent);
+      background:linear-gradient(90deg,transparent,#ffdca8,#9fe0ff,transparent);
       border-radius:2px; opacity:.9;
     }
 
     .pill{
-      background:linear-gradient(180deg,#fff,#f3f7ff);
-      color:#223357; border:1px solid #e6ecff; font-weight:800;
-      border-radius:999px; padding:.38rem .8rem; display:inline-flex; align-items:center; gap:.5rem;
-      box-shadow:0 6px 16px rgba(13,31,64,.06);
+      background:#fff;
+      color:#2a2a2a;
+      border:1px solid #f0f2fb;
+      font-weight:800;
+      border-radius:999px;
+      padding:.42rem .9rem;
+      display:inline-flex; align-items:center; gap:.5rem;
+      box-shadow:0 6px 16px rgba(34,45,89,.06);
     }
     .title-chip{
       font-size:14px;
@@ -50,47 +78,58 @@
       border:1px solid #ffe3a3; color:#5e4300;
     }
 
-    .progress{ height:12px; background:#eef3ff; border:1px solid #e2ebff; border-radius:999px; overflow:hidden; }
-    .progress-bar{ background:linear-gradient(90deg,var(--brand),var(--accent)); color:#fff; font-weight:800; font-size:.72rem; }
+    /* ===== Progress ===== */
+    .progress{ height:12px; background:#fff; border:1px solid #f0f2fb; border-radius:999px; overflow:hidden; }
+    .progress-bar{
+      background:linear-gradient(90deg,var(--brand),var(--brand-2));
+      color:#fff; font-weight:800; font-size:.72rem;
+    }
 
+    /* ===== Section ===== */
     .section-title{
-      font-weight:800; letter-spacing:.2px; color:#1f2b46;
-      font-size:clamp(18px,2.5vw,20px);
+      font-family:Fredoka, Nunito, system-ui;
+      font-weight:900; letter-spacing:.2px; color:#1f2b46;
+      font-size:clamp(18px,2.5vw,22px);
     }
     .section-sub{ color:var(--muted) }
 
+    /* ===== Cards ===== */
     .card-glass{
-      border:1px solid #e6ecff;
-      background:linear-gradient(180deg,#fff,#f7faff);
-      border-radius:18px; box-shadow:0 10px 28px rgba(13,31,64,.06);
+      border:1px solid #f0f2fb;
+      background: linear-gradient(180deg,#ffffff,#fbfcff);
+      border-radius:20px; box-shadow:0 12px 32px rgba(52,90,160,.10);
     }
 
+    /* ===== Achievement item ===== */
     .ach-card{
-      position:relative; display:flex; gap:.6rem; align-items:flex-start;
-      border:1px solid #e6ecff; border-radius:16px; padding:14px;
-      background:linear-gradient(180deg,#fff,#f7faff);
-      box-shadow:0 10px 22px rgba(13,31,64,.06);
+      position:relative; display:flex; gap:.75rem; align-items:flex-start;
+      border:1px solid #f0f2fb; border-radius:18px; padding:14px 14px 16px 18px;
+      background:linear-gradient(180deg,#ffffff,#fbfcff);
+      box-shadow:0 12px 26px rgba(52,90,160,.08);
       transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease;
       overflow:hidden;
     }
     .ach-card::before{
       content:""; position:absolute; left:0; top:0; bottom:0; width:6px;
-      background:linear-gradient(180deg,var(--brand),var(--accent));
-      opacity:.9;
+      background:linear-gradient(180deg,var(--brand),var(--brand-2));
+      opacity:.95;
     }
-    .ach-card:hover{ transform:translateY(-2px); box-shadow:0 16px 34px rgba(13,31,64,.10); border-color:#d9e6ff; }
+    .ach-card:hover{ transform:translateY(-2px); box-shadow:0 16px 34px rgba(52,90,160,.12); border-color:#e7edff; }
+
+    /* Sticker corners for playful vibe */
 
     .ach-icon{
-      width:40px; height:40px; border-radius:12px; display:inline-flex; align-items:center; justify-content:center;
-      background:linear-gradient(180deg,#fff,#f3f7ff); border:1px solid #e6ecff; color:#223357; font-size:1.1rem;
-      box-shadow:0 6px 16px rgba(13,31,64,.06);
+      width:44px; height:44px; border-radius:12px; display:inline-flex; align-items:center; justify-content:center;
+      background:linear-gradient(180deg,#fff,#f7faff); border:1px solid #eef1ff; color:#223357; font-size:1.15rem;
+      box-shadow:0 6px 16px rgba(13,31,64,.06); flex:0 0 44px;
     }
-    .ach-earned{ border-color:#c7f0d5; box-shadow:inset 0 0 0 1px #c7f0d5, 0 10px 22px rgba(13,31,64,.06); }
-    .ach-locked{ opacity:.95 }
+    .ach-earned{ border-color:#c7f0d5; box-shadow:inset 0 0 0 1px #c7f0d5, 0 12px 22px rgba(52,90,160,.06); }
+    .ach-locked{ opacity:.98 }
 
     .chip{
-      border-radius:999px; padding:.2rem .55rem; font-weight:800; font-size:.78rem;
-      background:linear-gradient(180deg,#fff,#f3f7ff); color:#223357; border:1px solid #e6ecff;
+      border-radius:999px; padding:.25rem .65rem; font-weight:800; font-size:.78rem;
+      background:#fff; color:#223357; border:1px solid #eef1ff;
+      box-shadow:0 4px 10px rgba(13,31,64,.04);
     }
     .chip-gold{
       background:linear-gradient(180deg,#fff8e6,#fff3cc); border-color:#ffe3a3; color:#5e4300;
@@ -101,21 +140,30 @@
 
     .muted{ color:var(--muted) }
 
-    /* ===== Title Modal styles ===== */
+    /* ===== Modal picker ===== */
     .title-card{
-      border:1px solid #e6ecff; border-radius:14px; padding:12px;
-      background:linear-gradient(180deg,#fff,#f7faff);
+      border:1px solid #f0f2fb; border-radius:16px; padding:12px;
+      background:linear-gradient(180deg,#ffffff,#fbfcff);
       display:flex; align-items:center; gap:.6rem; cursor:pointer;
       transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease;
     }
-    .title-card:hover{ transform:translateY(-1px); box-shadow:0 12px 28px rgba(13,31,64,.10); border-color:#d9e6ff; }
-    .title-card.active{ outline:2px solid var(--brand); box-shadow:0 0 0 4px #e6f0ff; }
-    .title-icon{ width:40px; height:40px; border-radius:12px; display:inline-flex; align-items:center; justify-content:center;
-      background:linear-gradient(180deg,#fff,#f3f7ff); border:1px solid #e6ecff; font-size:1.1rem; color:#223357; }
+    .title-card:hover{ transform:translateY(-1px); box-shadow:0 12px 28px rgba(52,90,160,.12); border-color:#e7edff; }
+    .title-card.active{ outline:2px solid var(--brand); box-shadow:0 0 0 4px #ffe9f2; }
+    .title-icon{ width:42px; height:42px; border-radius:12px; display:inline-flex; align-items:center; justify-content:center;
+      background:linear-gradient(180deg,#fff,#f7faff); border:1px solid #eef1ff; font-size:1.1rem; color:#223357; }
 
     .title-preview{
-      border:1px dashed #d8e3ff; background:#f7faff; border-radius:14px; padding:12px;
-      display:inline-flex; align-items:center; gap:.5rem;
+      border:1px dashed #ffdca8; background:#fffaf1; border-radius:14px; padding:10px 12px;
+      display:inline-flex; align-items:center; gap:.5rem; font-weight:800;
+    }
+
+    /* Fun buttons */
+    .btn-fun{
+      border-radius:12px; border:1px solid #ffdca8; background: linear-gradient(180deg,#fff6e7,#ffe8b3);
+      color:#8a5600; font-weight:800;
+    }
+    .btn-fun-outline{
+      border-radius:12px; border:1px dashed #ffdca8; background:#fff; color:#8a5600; font-weight:800;
     }
   </style>
 </head>
@@ -158,11 +206,11 @@
       {% endif %}
     {% endif %}
 
-    <!-- Header with username + featured title + single "Change title" button -->
+    <!-- Header -->
     <div class="page-header mb-4">
       <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
         <div>
-          <h1 class="h3 mb-1" style="font-weight:800; letter-spacing:.2px;">
+          <h1 class="h3 mb-1" style="font-family:Fredoka; font-weight:900; letter-spacing:.2px;">
             {{ username_safe }}
             {% if featured_title %}
               <span class="pill title-chip ms-2">
@@ -172,12 +220,11 @@
           </h1>
           <div class="muted">Collect badges and titles as you play boards.</div>
 
-          <div class="mt-2 d-flex align-items-center gap-2">
+          <div class="mt-2 d-flex align-items-center gap-2 flex-wrap">
             <span class="pill"><i class="bi bi-person-fill"></i> Level <b>{{ user_level|default(1) }}</b></span>
             <span class="pill"><i class="bi bi-stars"></i> Total XP <b>{{ user_xp|default(0) }}</b></span>
 
-            <!-- Open modal selector -->
-            <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#titleModal">
+            <button class="btn btn-sm btn-fun-outline" data-bs-toggle="modal" data-bs-target="#titleModal">
               <i class="bi bi-person-badge"></i> Change title
             </button>
           </div>
@@ -187,7 +234,7 @@
           {% set current_xp = (user_xp | default(0)) % 100 %}
           {% set xp_needed = 0 if user_level >= 5 else 100 - current_xp %}
           {% if user_level < 5 %}
-            <div class="small mb-2 muted">XP Progress ({{ current_xp }}/100)</div>
+            <div class="small mb-2 muted" style="font-weight:700;">XP Progress ({{ current_xp }}/100)</div>
             <div class="progress">
               <div class="progress-bar" role="progressbar" style="width: {{ current_xp }}%;" aria-valuenow="{{ current_xp }}" aria-valuemin="0" aria-valuemax="100">
                 {{ current_xp }} XP
@@ -211,7 +258,7 @@
       <div class="col-md-7">
         <div class="card-glass p-3 h-100">
           <div class="d-flex align-items-center justify-content-between mb-2">
-            <div class="fw-bold">Overall Progress</div>
+            <div class="fw-bold" style="font-family:Fredoka;">Overall Progress</div>
             <div class="chip chip-green"><i class="bi bi-trophy me-1"></i>{{ achievements_earned_safe }}/{{ achievements_total_safe }}</div>
           </div>
           <div class="progress mb-2"><div class="progress-bar" style="width: {{ pct }}%;">{{ pct }}%</div></div>
@@ -220,7 +267,7 @@
       </div>
       <div class="col-md-5">
         <div class="card-glass p-3 h-100">
-          <div class="fw-bold mb-2">Your Collected Titles</div>
+          <div class="fw-bold mb-2" style="font-family:Fredoka;">Your Collected Titles</div>
           <div class="titles-wrap">
             {% set any_titles = false %}
             {% for a in items|default([]) %}
@@ -247,7 +294,7 @@
 
     <!-- Achievements Grid -->
     <div class="mb-3">
-      <h2 class="h5 section-title mb-1">All Badges</h2>
+      <h2 class="section-title mb-1">All Badges</h2>
       <div class="section-sub">Everything you can unlock (live progress per badge).</div>
     </div>
 
@@ -259,10 +306,10 @@
         {% set p        = (100 * progress // target) if target and target > 0 else (100 if got else 0) %}
         <div class="col-12 col-sm-6 col-lg-4">
           <div class="ach-card {% if got %}ach-earned{% else %}ach-locked{% endif %}">
-            <div class="ach-icon me-2"><i class="bi {{ ach['icon'] }}"></i></div>
+            <div class="ach-icon me-1"><i class="bi {{ ach['icon'] }}"></i></div>
             <div class="flex-grow-1">
               <div class="d-flex align-items-center justify-content-between">
-                <div class="fw-bold">{{ ach['name'] }}</div>
+                <div class="fw-bold" style="font-family:Fredoka;">{{ ach['name'] }}</div>
                 {% if got %}
                   <span class="chip chip-green"><i class="bi bi-check2-circle"></i> Earned</span>
                 {% else %}
@@ -303,16 +350,16 @@
     </div>
 
     <div class="text-center mt-4">
-      <a class="btn chip" href="{{ url_for('home') }}"><i class="bi bi-arrow-left me-1"></i> Back to Home</a>
+      <a class="btn btn-fun-outline" href="{{ url_for('home') }}"><i class="bi bi-arrow-left me-1"></i> Back to Home</a>
     </div>
   </div>
 
   <!-- Title Picker Modal -->
   <div class="modal fade" id="titleModal" tabindex="-1" aria-labelledby="titleModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-scrollable modal-lg">
-      <div class="modal-content">
+      <div class="modal-content" style="border-radius:18px;">
         <div class="modal-header">
-          <h5 class="modal-title" id="titleModalLabel"><i class="bi bi-person-badge me-2"></i>Select a title</h5>
+          <h5 class="modal-title" id="titleModalLabel" style="font-family:Fredoka;"><i class="bi bi-person-badge me-2"></i>Select a title</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
 
@@ -330,7 +377,7 @@
                          data-code="{{ a.code }}" data-title="{{ tname }}" data-icon="{{ ticon }}">
                       <div class="title-icon"><i class="bi {{ ticon }}"></i></div>
                       <div class="flex-grow-1">
-                        <div class="fw-bold">{{ tname }}</div>
+                        <div class="fw-bold" style="font-family:Fredoka;">{{ tname }}</div>
                         <div class="small text-muted">{{ a.name }}</div>
                       </div>
                       {% if primary_title and tname == primary_title %}
@@ -362,8 +409,8 @@
         </div>
 
         <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
-          <button type="button" class="btn btn-primary" id="btnUseSelected" disabled>
+          <button type="button" class="btn btn-fun-outline" data-bs-dismiss="modal">Close</button>
+          <button type="button" class="btn btn-fun" id="btnUseSelected" disabled>
             <i class="bi bi-check2-circle me-1"></i>Use this title
           </button>
         </div>
@@ -371,14 +418,12 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
   // State for selection inside modal
   let selectedTitle = null;
 
   function setHeaderTitle(iconClass, titleText){
-    // Update header pill instantly
     const chip = document.querySelector('h1 .title-chip');
     if (chip) {
       chip.innerHTML = `<i class="bi ${iconClass} me-1"></i>${titleText}`;
@@ -407,11 +452,9 @@
 
     selectedTitle = { code, title, icon };
 
-    // Update preview
     const preview = document.getElementById('titlePreview');
     if (preview) preview.innerHTML = `<i class="bi ${icon} me-1"></i>${title}`;
 
-    // Enable button
     document.getElementById('btnUseSelected').disabled = false;
   });
 
@@ -438,10 +481,8 @@
         return;
       }
 
-      // Update header
       setHeaderTitle(selectedTitle.icon, selectedTitle.title);
 
-      // Close modal
       const modalEl = document.getElementById('titleModal');
       const modal = bootstrap.Modal.getInstance(modalEl);
       modal?.hide();
@@ -458,7 +499,6 @@
     const btn = document.getElementById('btnUseSelected');
     if (btn) btn.disabled = true;
     document.querySelectorAll('.js-title-card').forEach(el => el.classList.remove('active'));
-    // Restore preview to current header badge
     const chipIcon = document.querySelector('h1 .title-chip i');
     const chipText = document.querySelector('h1 .title-chip');
     const preview  = document.getElementById('titlePreview');

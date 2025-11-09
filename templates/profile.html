@@ -4,78 +4,182 @@
 <meta charset="utf-8"/>
 <title>Profile • {{ username }}</title>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+
+<!-- Playful fonts -->
+
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link rel="icon" href="{{ url_for('static', filename='img/favicon.png') }}" sizes="32x32">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" sizes="180x180">
 
 <style>
 :root{
-  --ink:#0e1b35; --muted:#4b5567; --bg:#ffffff; --bg-soft:#f7f9ff; --grid:#0e1b3514;
-  --brand:#3b82f6; --accent:#8f9bff; --ring:#cfe2ff; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444;
+  --ink:#2a2a2a;
+  --muted:#6e7494;
+  --bg:#ffffff;
+
+  --bg-wash-1:#fff7f1; /* peach */
+  --bg-wash-2:#f0f7ff; /* sky */
+  --bg-wash-3:#f7fff6; /* mint */
+
+  --paper:#fffdf5;
+  --paper-br:#f2eede;
+
+  --brand:#ff8db3;   /* strawberry */
+  --brand-2:#7acbff; /* sky */
+  --brand-3:#7ee0a8; /* mint */
+  --brand-4:#ffd86b; /* sunshine */
+
+  --ring:#ffdca8;
+
+  --ok:#16a34a;
+  --gold:#f59e0b;
+  --bad:#ef4444;
 }
+
+/* Background */
 body{
-  color:var(--ink); background:var(--bg);
-  font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
-  background-image:
-    radial-gradient(36vmax 36vmax at 12% 6%, #eef4ff 0%, transparent 70%),
-    radial-gradient(32vmax 32vmax at 88% 0%, #f3f6ff 0%, transparent 70%),
-    radial-gradient(30vmax 30vmax at 10% 90%, #f7faff 0%, transparent 70%);
+  font-family: Nunito, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  color:var(--ink);
+  background:
+    radial-gradient(60vmax 40vmax at 8% 0%, var(--bg-wash-2) 0%, transparent 65%),
+    radial-gradient(60vmax 40vmax at 92% 4%, var(--bg-wash-1) 0%, transparent 65%),
+    radial-gradient(36vmax 28vmax at 50% 100%, var(--bg-wash-3) 0%, transparent 70%),
+    #fff;
   background-attachment: fixed;
 }
 
-/* Page header */
-.page-head{border:1px solid #e6ecff; background:linear-gradient(180deg,#fff,#f7faff); border-radius:18px; box-shadow:0 10px 28px rgba(13,31,64,.06); padding:16px 18px}
-
-/* Chips */
-.pill{background:linear-gradient(180deg,#fff,#f3f7ff); color:#223357; border:1px solid #e6ecff; font-weight:800; border-radius:999px; padding:.35rem .75rem; display:inline-flex; gap:.45rem; align-items:center; box-shadow:0 6px 16px rgba(13,31,64,.06)}
-.title-pill{background:linear-gradient(180deg,#fff8e6,#fff3cc); color:#5e4300; border:1px solid #ffe3a3; border-radius:999px; padding:.35rem .6rem; font-weight:800; display:inline-flex; gap:.45rem; align-items:center}
-
-/* Cards */
-.card-glass{border:1px solid #e6ecff; background:linear-gradient(180deg,#fff,#f7faff); border-radius:18px; box-shadow:0 10px 28px rgba(13,31,64,.06)}
-
-/* Progress */
-.progress{height:12px;background:#eef3ff;border:1px solid #e2ebff;border-radius:999px;overflow:hidden}
-.progress-bar{background-image:linear-gradient(90deg,var(--brand),var(--accent));font-size:.75rem;font-weight:800;color:#ffffffcc}
+/* Header card */
+.page-header{
+  background: linear-gradient(180deg,#ffffff,#fbfcff);
+  border:1px solid #f0f2fb;
+  border-radius:22px;
+  padding:22px;
+  box-shadow:0 16px 44px rgba(52,90,160,.10);
+  position:relative;
+}
+.page-header::after{
+  content:""; position:absolute; left:20px; right:20px; bottom:-1px; height:2px;
+  background:linear-gradient(90deg,transparent,#ffdca8,#9fe0ff,transparent);
+  border-radius:2px;
+  opacity:.9;
+}
 
 /* Small chips */
-.chip{border-radius:999px;padding:.2rem .55rem;font-weight:800;font-size:.8rem;background:linear-gradient(180deg,#fff,#f3f7ff);color:#223357;border:1px solid #e6ecff}
-.chip-green{background:linear-gradient(180deg,#eafff3,#d7ffe9);border-color:#baf3d0;color:#0b3b22}
-.badge-tone{background:linear-gradient(180deg,#fff,#f3f7ff);color:#223357;border:1px solid #e6ecff;font-weight:700}
+.pill{
+  background:#fff;
+  color:#2a2a2a;
+  border:1px solid #f0f2fb;
+  font-weight:800;
+  border-radius:999px;
+  padding:.42rem .9rem;
+  display:inline-flex; align-items:center; gap:.5rem;
+  box-shadow:0 6px 16px rgba(34,45,89,.06);
+}
+
+/* Title chip */
+.title-chip{
+  background:linear-gradient(180deg,#fff8e6,#fff3cc);
+  border:1px solid #ffe3a3;
+  color:#5e4300;
+  font-size:14px;
+}
+
+/* Generic card */
+.card-glass{
+  border:1px solid #f0f2fb;
+  background: linear-gradient(180deg,#ffffff,#fbfcff);
+  border-radius:20px;
+  box-shadow:0 12px 32px rgba(52,90,160,.10);
+}
+
+/* Section titles */
+.section-title{
+  font-family:Fredoka;
+  font-weight:900;
+  letter-spacing:.2px;
+  color:#1f2b46;
+  font-size:clamp(18px,2.5vw,22px);
+}
+.section-sub{
+  color:var(--muted);
+}
 
 /* Table */
-.table-wrap{border:1px solid #e6ecff; border-radius:16px; overflow:hidden; background:linear-gradient(180deg,#fff,#f7faff); box-shadow:0 8px 22px rgba(13,31,64,.05)}
-.table-modern{ border-collapse:separate; border-spacing:0; width:100%; color:var(--ink) }
-.table-modern thead th{ position:sticky; top:0; z-index:1; background:linear-gradient(180deg,#f7fbff,#eef4ff); border-bottom:1px solid #e6ecff !important; text-transform:uppercase; letter-spacing:.35px; font-size:.75rem; color:#1f2b46; padding:.6rem .75rem !important }
-.table-modern td{ padding:.65rem .75rem !important; vertical-align: middle; border-bottom:1px solid #edf2ff }
-.table-modern tbody tr:hover{ background:#f7fbff }
+.table-wrap{
+  border:1px solid #f0f2fb;
+  border-radius:20px;
+  overflow:hidden;
+  background:linear-gradient(180deg,#ffffff,#fbfcff);
+  box-shadow:0 12px 32px rgba(52,90,160,.1);
+}
+.table-modern thead th{
+  background:linear-gradient(180deg,#f7fbff,#eef4ff);
+  border-bottom:1px solid #e6ecff!important;
+  text-transform:uppercase;
+  font-size:.75rem;
+  letter-spacing:.35px;
+  color:#1f2b46;
+}
+.table-modern td{
+  border-bottom:1px solid #edf2ff;
+}
+.table-modern tbody tr:hover{
+  background:#f7fbff;
+}
 
-.progress.progress-tiny{ height:8px; border-radius:999px; background:#eef3ff; border:1px solid #e2ebff }
-.score-label{ font-weight:700; font-size:.85rem }
-.score-good{ color:#0f5132 } .score-ok{ color:#7a5200 } .score-bad{ color:#7f1d1d }
-
-/* Lines visualization */
-.line-dots{ display:flex; gap:6px; align-items:center }
-.line-dots .dot{ width:10px; height:10px; border-radius:3px; background:#eef3ff; border:1px solid #e2ebff; box-shadow:inset 0 0 0 1px #fff }
-.line-dots .dot.on{ background:linear-gradient(180deg,var(--brand),var(--accent)); border-color:#cfe2ff }
-
-/* Vocab chip + KR badge */
-.word-chip{ display:inline-flex; align-items:center; gap:10px; padding:.25rem .55rem; border-radius:999px; background:linear-gradient(180deg,#fff,#f3f7ff); border:1px solid #e6ecff; font-weight:800; color:#1f2b46; text-decoration:none !important }
-.word-chip .bookmark-toggle{ cursor:pointer }
-.kr-badge{ background:linear-gradient(180deg,#eafff3,#d7ffe9); color:#0b3b22; border:1px solid #baf3d0; border-radius:999px; padding:.15rem .5rem; font-weight:800; font-size:.78rem }
-
-/* Inputs */
-input, select{ background:#fff !important; color:#0e1b35 !important; border:1px solid #e2ebff !important; border-radius:12px !important; box-shadow:0 2px 0 rgba(13,31,64,.02) inset }
-input:focus, select:focus{ outline:none; border-color:#cfe2ff !important; box-shadow:0 0 0 .2rem #cfe2ff66 !important }
+/* Progress */
+.progress{
+  height:12px;
+  background:#fff;
+  border:1px solid #f0f2fb;
+  border-radius:999px;
+  overflow:hidden;
+}
+.progress-bar{
+  background:linear-gradient(90deg,var(--brand),var(--brand-2));
+  color:#fff;
+  font-weight:800;
+  font-size:.72rem;
+}
 
 /* Story cards */
-.book-card{ border:1px solid #e6ecff; background:linear-gradient(180deg,#fff,#f7faff); border-radius:16px; box-shadow:0 8px 22px rgba(13,31,64,.06) }
-.book-card.link-card{ cursor:pointer; transition:transform .14s ease, box-shadow .14s ease }
-.book-card.link-card:hover{ transform:translateY(-2px); box-shadow:0 12px 28px rgba(13,31,64,.08) }
-.book-card .title{ font-weight:800; letter-spacing:.2px }
-.dim{ color:#4b5567 }
-.clamp-2{ display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden }
-.opacity-50{ opacity:.5 }
+.book-card{
+  border:1px solid #f0f2fb;
+  background:linear-gradient(180deg,#ffffff,#fbfcff);
+  border-radius:20px;
+  box-shadow:0 12px 32px rgba(52,90,160,.10);
+  transition:.15s ease;
+}
+.book-card:hover{
+  transform:translateY(-2px);
+  box-shadow:0 16px 40px rgba(52,90,160,.12);
+}
+
+/* Vocab tags */
+.word-chip{
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  padding:.25rem .55rem;
+  border-radius:999px;
+  background:linear-gradient(180deg,#fff,#f3f7ff);
+  border:1px solid #e6ecff;
+  font-weight:800;
+  color:#1f2b46;
+  text-decoration:none!important;
+}
+.kr-badge{
+  background:linear-gradient(180deg,#eafff3,#d7ffe9);
+  border:1px solid #baf3d0;
+  border-radius:999px;
+  padding:.15rem .5rem;
+  font-weight:800;
+  font-size:.78rem;
+}
+.bookmark-toggle{
+  cursor:pointer;
+}
+
 </style>
 </head>
 <body>
@@ -84,268 +188,178 @@ input:focus, select:focus{ outline:none; border-color:#cfe2ff !important; box-sh
 
 <div class="container pb-5 mt-4">
 
-  <!-- Page header with username, title (if any), Level & XP -->
-  <div class="page-head mb-3">
-    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
-      <div class="d-flex align-items-center flex-wrap gap-2">
-        <h1 class="h5 m-0" style="font-weight:800; letter-spacing:.2px;">{{ username }}</h1>
+<!-- HEADER -->
+<div class="page-header mb-4">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
+    <div>
+      <h1 class="h3 mb-1" style="font-family:Fredoka; font-weight:900; letter-spacing:.2px;">
+        {{ username }}
         {% if display_title %}
-          <span class="title-pill"><i class="bi {{ title_icon or 'bi-award' }} me-1"></i>{{ display_title }}</span>
+          <span class="pill title-chip ms-2">
+            <i class="bi {{ title_icon or 'bi-award' }} me-1"></i>{{ display_title }}
+          </span>
         {% endif %}
-      </div>
-      <div class="d-flex align-items-center flex-wrap gap-2">
-        <span class="pill" aria-label="Current level"><i class="bi bi-mortarboard"></i> Level <b>{{ user_level|default(1) }}</b></span>
-        <span class="pill" aria-label="Total experience points"><i class="bi bi-stars"></i> Total XP <b>{{ user_xp|default(0) }}</b></span>
+      </h1>
+
+      <div class="muted">Your learning journey at a glance.</div>
+
+      <div class="mt-2 d-flex align-items-center gap-2 flex-wrap">
+        <span class="pill"><i class="bi bi-person-fill"></i> Level <b>{{ user_level|default(1) }}</b></span>
+        <span class="pill"><i class="bi bi-stars"></i> Total XP <b>{{ user_xp|default(0) }}</b></span>
       </div>
     </div>
-  </div>
 
-  <!-- Stats -->
-  <div class="row g-3 mb-3">
-    <div class="col-lg-6">
-      <div class="card-glass p-3 h-100">
-        {% set total_xp = user_xp|default(0) %}
-        {% set user_lvl = user_level|default(1) %}
-        {% set current_xp = (total_xp % 100) %}
-        {% set next_lvl = (user_lvl + 1) %}
-        <div class="d-flex align-items-center justify-content-between mb-2">
-          <div class="fw-bold">XP Progress • Level {{ user_lvl }}</div>
-          <div class="chip chip-green"><i class="bi bi-stars me-1"></i>{{ current_xp }}/100</div>
-        </div>
-        <div class="progress mb-1" role="progressbar" aria-label="XP towards next level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ current_xp }}">
-          <div class="progress-bar" style="width: {{ current_xp }}%;"></div>
-        </div>
-        <div class="small dim">
-          {{ 100 - current_xp }} XP to reach Level {{ next_lvl }}.
-          <span class="ms-1">(Total: {{ total_xp }} XP)</span>
-        </div>
-      </div>
-    </div>
-    <div class="col-lg-6">
-      {% set total = achievements_total|default(0) %}
-      {% set earned = achievements_earned|default(0) %}
-      {% set pct = 0 if total==0 else ((earned*100)//total) %}
-      <div class="card-glass p-3 h-100">
-        <div class="d-flex align-items-center justify-content-between mb-2">
-          <div class="fw-bold">Achievements</div>
-          <div class="chip"><i class="bi bi-trophy-fill me-1"></i>{{ earned }}/{{ total }}</div>
-        </div>
-        <div class="progress mb-1"><div class="progress-bar" style="width: {{ pct }}%;">{{ pct }}%</div></div>
-        <div class="small dim">Your collected titles:
-          {% if earned_titles %}
-            {% for t in earned_titles %}<span class="chip">{{ t }}</span>{% endfor %}
-          {% else %}<span class="text-secondary">—</span>{% endif %}
-        </div>
-      </div>
+    <!-- XP Progress -->
+    <div class="w-100" style="max-width:420px;">
+      {% set total_xp = user_xp|default(0) %}
+      {% set current_xp = total_xp % 100 %}
+      {% set next_lvl = user_level + 1 %}
+      {% set remain = 100 - current_xp %}
+      <div class="small mb-2 muted" style="font-weight:700;">XP Progress ({{ current_xp }}/100)</div>
+      <div class="progress"><div class="progress-bar" style="width:{{ current_xp }}%;">{{ current_xp }} XP</div></div>
+      <div class="small mt-1 text-end muted">{{ remain }} XP to Level {{ next_lvl }}</div>
     </div>
   </div>
+</div>
 
-  <!-- Recent Boards -->
-  <div class="mb-2"><h2 class="h5" style="font-weight:800; letter-spacing:.2px;">Recent Boards</h2></div>
-  <div class="table-wrap mb-4">
-    {% if attempts and attempts|length > 0 %}
-      <div class="table-responsive">
-        <table class="table table-modern table-hover align-middle mb-0">
-          <thead>
-            <tr>
-              <th style="width:160px;">Date</th>
-              <th style="width:110px;">Level</th>
-              <th>Score</th>
-              <th style="width:160px;">Lines</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for a in attempts %}
-              {% set score = (a['score']|int) %}
-              {% set score_cls = 'score-good' if score>=85 else ('score-ok' if score>=60 else 'score-bad') %}
-              <tr>
-                <td class="text-nowrap"><i class="bi bi-calendar-event me-1"></i>{{ (a['created_at']|string)[:10] }}</td>
-                <td><span class="chip"><i class="bi bi-mortarboard me-1"></i>Lv {{ a['level'] }}</span></td>
-                <td>
-                  <div class="d-flex flex-column gap-1">
-                    <div class="progress progress-tiny"><div class="progress-bar" style="width: {{ score }}%;"></div></div>
-                    <div class="score-label {{ score_cls }}">{{ score }}% <span class="text-secondary fw-normal">({{ a['total'] }} cells)</span></div>
-                  </div>
-                </td>
-                <td>
-                  <div class="line-dots">
-                    {% for i in range(0,6) %}
-                      <span class="dot {% if i < (a['lines_completed']|int) %}on{% endif %}"></span>
-                    {% endfor %}
-                  </div>
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    {% else %}
-      <div class="p-3 dim">No attempts yet. Play a board to see your history here.</div>
-    {% endif %}
-  </div>
+<!-- RECENT BOARDS -->
+<div class="mb-2">
+  <h2 class="section-title mb-0">Recent Boards</h2>
+  <div class="section-sub">Your latest practice attempts.</div>
+</div>
 
-  <!-- Storybook Recommendations (exactly 3 ready stories; text-only, whole card clickable) -->
-  <div class="d-flex align-items-center justify-content-between mb-2">
-    <h2 class="h5 mb-0" style="font-weight:800; letter-spacing:.2px;">Storybook Recommendations</h2>
-    <div class="small dim">Hand-picked from your generated stories.</div>
-  </div>
-
-  <div id="recList" class="row g-3 mb-5">
-    {% if ready_items and ready_items|length > 0 %}
-      {% for it in ready_items %}
-        <div class="col-12 col-sm-6 col-lg-4">
-          <a href="/story/{{ it.slug }}" class="text-decoration-none text-reset d-block" aria-label="Open story {{ it.title }}">
-            <div class="book-card link-card p-3 h-100 d-flex flex-column gap-2">
-              <div class="title">{{ it.title }}</div>
-              <div class="small text-secondary">by {{ it.author or 'Unknown' }}</div>
-              <div class="d-flex flex-wrap gap-1">
-                {% for c in (it.categories or [])[:2] %}
-                  <span class="badge badge-tone">{{ c }}</span>
-                {% endfor %}
-                {% for t in (it.themes or [])[:1] %}
-                  <span class="badge badge-tone">{{ t }}</span>
-                {% endfor %}
+<div class="table-wrap mb-4">
+  {% if attempts %}
+  <div class="table-responsive">
+    <table class="table table-modern table-hover align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Level</th>
+          <th>Score</th>
+          <th>Lines</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in attempts %}
+          {% set score = a['score']|int %}
+          <tr>
+            <td>{{ (a['created_at']|string)[:10] }}</td>
+            <td><span class="pill">Lv {{ a['level'] }}</span></td>
+            <td>
+              <div class="d-flex flex-column">
+                <div class="progress progress-tiny mb-1"><div class="progress-bar" style="width:{{ score }}%"></div></div>
+                <span class="small">{{ score }}%</span>
               </div>
-            </div>
-          </a>
-        </div>
-      {% endfor %}
-    {% elif few_items and few_items|length > 0 %}
-      {% for it in few_items %}
-        <div class="col-12 col-sm-6 col-lg-4">
-          <a href="/story/{{ it.slug }}" class="text-decoration-none text-reset d-block" aria-label="Open story {{ it.title }}">
-            <div class="book-card link-card p-3 h-100 d-flex flex-column gap-2">
-              <div class="title">{{ it.title }}</div>
-              <div class="small text-secondary">by {{ it.author or 'Unknown' }}</div>
-              <div class="d-flex flex-wrap gap-1">
-                {% for c in (it.categories or [])[:2] %}
-                  <span class="badge badge-tone">{{ c }}</span>
-                {% endfor %}
-                {% for t in (it.themes or [])[:1] %}
-                  <span class="badge badge-tone">{{ t }}</span>
-                {% endfor %}
-              </div>
-            </div>
-          </a>
-        </div>
-      {% endfor %}
-    {% else %}
-      <div class="dim">No generated stories yet.</div>
-    {% endif %}
+            </td>
+            <td>
+              {% for i in range(0,6) %}
+                <span style="display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;
+                  background:{% if i < a['lines_completed'] %}var(--brand){% else %}#eef2ff{% endif %};"></span>
+              {% endfor %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
+  {% else %}
+  <div class="p-3 text-muted">No attempts yet.</div>
+  {% endif %}
+</div>
 
-  <!-- Personal Vocabulary Notebook (BOOKMARKED ONLY) -->
-  <div class="d-flex align-items-center justify-content-between mb-2">
-    <h2 class="h5 mb-0" style="font-weight:800; letter-spacing:.2px;">Personal Vocabulary Notebook</h2>
-    <div class="small dim">Click the gold bookmark icon to remove a word from your notebook.</div>
+<!-- STORY RECOMMENDATIONS -->
+<div class="d-flex align-items-center justify-content-between mb-2">
+  <h2 class="section-title mb-0">Storybook Recommendations</h2>
+  <div class="section-sub">Based on stories you created.</div>
+</div>
+
+<div class="row g-3 mb-5">
+  {% for it in ready_items or few_items %}
+  <div class="col-12 col-sm-6 col-lg-4">
+    <a href="/story/{{ it.slug }}" class="text-decoration-none text-reset d-block">
+      <div class="book-card p-3 h-100 d-flex flex-column gap-2">
+        <div class="fw-bold" style="font-family:Fredoka;">{{ it.title }}</div>
+        <div class="small text-muted">by {{ it.author or 'Unknown' }}</div>
+      </div>
+    </a>
   </div>
+  {% endfor %}
+  {% if not (ready_items or few_items) %}
+  <div class="text-muted">No stories yet.</div>
+  {% endif %}
+</div>
 
-  <!-- Clear instruction on unbookmarking -->
-  <div class="alert alert-warning py-2 px-3 small" role="alert">
-    <i class="bi bi-info-circle me-1"></i>
-    To remove a saved word, click the <i class="bi bi-bookmark-fill text-warning"></i> icon next to it.
-    It will instantly be unbookmarked and disappear from this list.
-  </div>
+<!-- VOCABULARY NOTEBOOK -->
+<h2 class="section-title mb-1">Personal Vocabulary Notebook</h2>
+<div class="section-sub mb-2">Words you bookmarked while reading.</div>
 
-  <div class="table-wrap" id="vocabWrap">
-    {% if vocab_rows and vocab_rows|length > 0 %}
-      {% set ns = namespace(any=False) %}
-      <div class="table-responsive">
-        <table class="table table-modern table-hover align-middle mb-0" id="vocabTable">
-          <thead>
-            <tr>
-              <th style="width:220px;">Word</th>
-              <th style="width:120px;">KR</th>
-              <th>EN Definition</th>
-              <th style="width:140px;">Date</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for v in vocab_rows %}
-              {% set is_bm = (('bookmarked' in v.keys()) and (v['bookmarked']|int == 1)) %}
-              {% if is_bm %}
-                {% set ns.any = True %}
-                <tr data-word="{{ v['word'] }}">
-                  <td>
-                    <span class="word-chip">
-                      <i class="bi bi-bookmark-fill text-warning bookmark-toggle" data-word="{{ v['word'] }}" title="Unbookmark"></i>
-                      {{ v['word'] }}
-                    </span>
-                  </td>
-                  <td>
-                    {% if v['translation'] %}
-                      <span class="kr-badge">{{ v['translation'] }}</span>
-                    {% else %}
-                      <span class="text-secondary">—</span>
-                    {% endif %}
-                  </td>
-                  <td class="small"><div class="clamp-2">{{ v['definition'] or '—' }}</div></td>
-                  <td class="small text-secondary">{{ (v['created_at']|string)[:10] }}</td>
-                </tr>
+<div class="alert alert-warning small py-2 px-3">
+  <i class="bi bi-info-circle me-1"></i>
+  Click the <i class="bi bi-bookmark-fill text-warning"></i> icon to unbookmark.
+</div>
+
+<div class="table-wrap" id="vocabWrap">
+  {% if vocab_rows %}
+  <div class="table-responsive">
+    <table class="table table-modern align-middle mb-0" id="vocabTable">
+      <thead>
+        <tr>
+          <th>Word</th><th>KR</th><th>Definition</th><th>Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in vocab_rows %}
+          {% if v['bookmarked'] %}
+          <tr data-word="{{ v['word'] }}">
+            <td>
+              <span class="word-chip">
+                <i class="bi bi-bookmark-fill text-warning bookmark-toggle" data-word="{{ v['word'] }}"></i>
+                {{ v['word'] }}
+              </span>
+            </td>
+            <td>
+              {% if v['translation'] %}
+                <span class="kr-badge">{{ v['translation'] }}</span>
+              {% else %}
+                <span class="text-muted">—</span>
               {% endif %}
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      {% if not ns.any %}
-        <div class="p-3 dim">No bookmarked vocabulary yet.</div>
-      {% endif %}
-    {% else %}
-      <div class="p-3 dim">No bookmarked vocabulary yet.</div>
-    {% endif %}
+            </td>
+            <td class="small">{{ v['definition'] }}</td>
+            <td class="small text-muted">{{ (v['created_at']|string)[:10] }}</td>
+          </tr>
+          {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
+  {% else %}
+    <div class="p-3 text-muted">No bookmarked vocabulary yet.</div>
+  {% endif %}
+</div>
 
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
-/* --- Vocab: toggle bookmark icon (unbookmark) --- */
-const vocabTable = document.getElementById('vocabTable');
-const vocabWrap  = document.getElementById('vocabWrap');
-
-vocabTable?.addEventListener('click', async (e)=>{
-  const icon = e.target.closest('.bookmark-toggle');
-  if (!icon) return;
-  e.preventDefault();
-  e.stopPropagation();
-
-  const word = icon.dataset.word;
-  const row  = icon.closest('tr');
-  if (!word || !row) return;
-
-  icon.classList.add('opacity-50');
+/* Unbookmark vocab in real-time */
+const vocabTable=document.getElementById('vocabTable');
+vocabTable?.addEventListener('click',async(e)=>{
+  const icon=e.target.closest('.bookmark-toggle');
+  if(!icon)return;
+  const word=icon.dataset.word;
+  const row=icon.closest('tr');
+  icon.style.opacity=".5";
   try{
-    const r = await fetch('/api/vocab/bookmark', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ word, toggle: true })
+    const r=await fetch('/api/vocab/bookmark',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({word,toggle:true})
     });
-    const s = await r.json().catch(()=>({}));
-    const nowBookmarked = (typeof s.bookmarked === 'boolean') ? s.bookmarked : false;
-    if (!nowBookmarked){
-      row.remove();
-      ensureVocabEmptyState();
-    }else{
-      icon.classList.remove('opacity-50');
-    }
-  }catch(_){
-    icon.classList.remove('opacity-50');
-  }
+    const d=await r.json().catch(()=>({}));
+    if(d.bookmarked===false) row.remove();
+  }catch(_){}
 });
-
-function ensureVocabEmptyState(){
-  const tbody = vocabTable?.querySelector('tbody');
-  const hasRows = !!tbody && tbody.querySelectorAll('tr').length > 0;
-  if (!hasRows){
-    const empty = document.createElement('div');
-    empty.id = 'vocabEmpty';
-    empty.className = 'p-3 dim';
-    empty.textContent = 'No bookmarked vocabulary yet.';
-    vocabWrap.innerHTML = '';
-    vocabWrap.appendChild(empty);
-  }
-}
 </script>
+
 </body>
 </html>

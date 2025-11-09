@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Career Worksheet</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<style>
+:root{ --ink:#0e1b35; --muted:#566076; --ring:#e7edff; --brand:#4763ff; }
+body{ font-family: Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; color:var(--ink); }
+.card{ border-radius: 16px; box-shadow: 0 10px 28px rgba(14,27,53,0.08); }
+.section-title{ font-weight: 800; font-size: 1.1rem; margin-bottom:.5rem; }
+.q{ margin-bottom: .75rem; }
+.q .prompt{ margin-bottom:.35rem; }
+.options .form-check{ margin-bottom:.25rem; }
+textarea{ min-height: 110px; }
+.badge-soft{ background:#eef3ff; color:#4360d9; border-radius: 8px; }
+</style>
+</head>
+<body class="bg-light py-5">
+<div class="container" style="max-width: 920px;">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+      <h1 class="h4 mb-1 text-capitalize">{{ job }} worksheet</h1>
+      <div class="text-secondary small">Level {{ level }} • Created {{ created_at }}</div>
+    </div>
+    <div>
+      <a class="btn btn-outline-secondary" href="{{ url_for('career') }}">New Worksheet</a>
+      <a class="btn btn-outline-secondary ms-2" href="{{ url_for('home') }}">Home</a>
+    </div>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="mb-3">
+        {% for cat, msg in messages %}
+          <div class="alert alert-{{cat}} mb-2" role="alert">{{ msg }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <div class="card p-4 mb-4">
+    <div class="section-title">Reading</div>
+    <p class="mb-0">{{ passage }}</p>
+  </div>
+
+  <form method="post" action="{{ url_for('career_submit', ws_id=ws_id) }}">
+
+    <!-- ✅ FIXED MCQ BLOCK (no loop.parent) -->
+    <div class="card p-4 mb-4">
+      <div class="section-title">A. Multiple Choice (pick one)</div>
+      {% for item in mcq %}
+        {% set q_index = loop.index0 %}
+        <div class="q">
+          <div class="prompt">{{ loop.index }}. {{ item.prompt|safe }}</div>
+          <div class="options">
+            {% for opt in item.options %}
+              <div class="form-check">
+                <input class="form-check-input"
+                       type="radio"
+                       name="mcq_{{ q_index }}"
+                       id="m{{ q_index }}_{{ loop.index0 }}"
+                       value="{{ loop.index0 }}">
+                <label class="form-check-label"
+                       for="m{{ q_index }}_{{ loop.index0 }}">{{ opt }}</label>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="card p-4 mb-4">
+      <div class="section-title">B. Short Blanks (one word)</div>
+      {% for item in short %}
+        <div class="q">
+          <div class="prompt">{{ loop.index }}. {{ item.prompt|safe }}</div>
+          <input class="form-control" name="short_{{ loop.index0 }}" placeholder="Type one word">
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="card p-4 mb-4">
+      <div class="section-title">C. Write One Sentence</div>
+      {% set L = long_items[0] if long_items and long_items[0] else None %}
+      {% if L %}
+        <p class="mb-2">{{ L.prompt }}</p>
+        <div class="mb-2">
+          {% for w in L.required_words %}
+            <span class="badge badge-soft me-1 px-2 py-1">{{ w }}</span>
+          {% endfor %}
+        </div>
+        <textarea name="long_0" class="form-control" placeholder="Write here..."></textarea>
+      {% else %}
+        <p>No writing prompt.</p>
+      {% endif %}
+    </div>
+
+    <div class="d-flex">
+      <button class="btn btn-primary px-4" type="submit">Submit</button>
+      <a class="btn btn-outline-secondary ms-2" href="{{ url_for('career') }}">Back</a>
+    </div>
+
+  </form>
+</div>
+</body>
+</html>

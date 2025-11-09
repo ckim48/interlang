@@ -6,16 +6,52 @@
   <title>Register • InterLang</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/login.css') }}">
   <link rel="icon" href="{{ url_for('static', filename='img/favicon.png') }}" sizes="32x32">
-<link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" sizes="180x180">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" sizes="180x180">
 
+  <style>
+    :root{ --ink:#0e1b35; --muted:#52607e; --ring:#e7edff; --brand:#4763ff; }
+
+    body{
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: radial-gradient(80vmax 60vmax at -10% -10%, #eef3ff 0%, transparent 50%),
+                  radial-gradient(70vmax 50vmax at 110% 0%, #f4f7ff 0%, transparent 50%),
+                  #ffffff;
+      color: var(--ink);
+      min-height: 100vh; display: grid; place-items: center;
+    }
+
+    .sign-in__wrapper{ width:min(520px, 92vw); }
+
+    .form{
+      background:#fff; border:1px solid var(--ring); border-radius:16px;
+      box-shadow:0 20px 50px rgba(15,30,72,.08);
+      padding: 22px 18px;
+    }
+
+    .form-title{ font-weight:800; font-size:1.25rem; margin:4px 0 10px; letter-spacing:.2px; }
+    .small-note{ color: var(--muted); }
+
+    .btn-brand{
+      background: var(--brand); border: none; font-weight: 700;
+      color: white;
+      box-shadow: 0 8px 18px rgba(71,99,255,.25);
+    }
+    .btn-brand:hover{ filter: brightness(.96); }
+
+    .link-like{ text-decoration: none; font-weight: 700; }
+
+    label.form-label{ font-weight:700; color:#203155; }
+  </style>
 </head>
+
 <body>
   <div class="sign-in__wrapper">
     <form class="form" autocomplete="off" action="{{ url_for('register') }}" method="post">
+
       <div class="form-title">Create Account</div>
 
+      <!-- Auth fields first -->
       <div class="mb-2">
         <label for="username" class="form-label">User ID</label>
         <input type="text" class="form-control" id="username" placeholder="Choose a User ID" name="username" required/>
@@ -30,13 +66,38 @@
         <label for="confirm" class="form-label">Confirm Password</label>
         <input type="password" class="form-control" id="confirm" placeholder="Re-enter password" name="confirm" required minlength="6"/>
       </div>
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for category, message in messages %}
-          <div class="alert alert-{{ category }} mb-2" role="alert">{{ message }}</div>
-        {% endfor %}
-      {% endif %}
-    {% endwith %}
+
+      <!-- Age, Grade, Gender moved BELOW password section -->
+      <div class="row g-2 mb-2">
+        <div class="col-6">
+          <label class="form-label" for="age">Age</label>
+          <input class="form-control" id="age" name="age" type="number" min="5" max="20" placeholder="e.g., 12">
+        </div>
+        <div class="col-6">
+          <label class="form-label" for="grade">Grade</label>
+          <input class="form-control" id="grade" name="grade" placeholder="e.g., 5">
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label" for="gender">Gender</label>
+        <select class="form-select" id="gender" name="gender">
+          <option value="">Prefer not to say</option>
+          <option value="female">Female</option>
+          <option value="male">Male</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+
+      <!-- Flask messages -->
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="alert alert-{{ category }} mb-2" role="alert">{{ message }}</div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
       <button type="submit" class="btn btn-brand w-100">Create Account</button>
 
       <div class="mt-3 text-center small-note">
@@ -47,10 +108,9 @@
   </div>
 
   <script>
-    // simple client-side confirm check (optional)
     document.querySelector('form')?.addEventListener('submit', (e) => {
-      const p = document.getElementById('password')?.value || '';
-      const c = document.getElementById('confirm')?.value || '';
+      const p = document.getElementById('password').value;
+      const c = document.getElementById('confirm').value;
       if (p !== c) {
         e.preventDefault();
         alert('Passwords do not match.');

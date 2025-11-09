@@ -1,219 +1,295 @@
+<!-- templates/home.html (InterLang • Play & Learn) -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Quiz Home</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="UTF-8"/>
+  <title>InterLang • Play & Learn</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
-  <link rel="icon" href="{{ url_for('static', filename='img/favicon.png') }}" sizes="32x32">
-  <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" sizes="180x180">
+  <!-- Kid-friendly display + clean body -->
+
+  <link rel="icon" href="{{ url_for('static', filename='img/favicon.png') }}" sizes="32x32"/>
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" sizes="180x180"/>
 
   <style>
     :root{
-      --ink:#0e1b35; --muted:#4b5567; --bg:#ffffff; --bg-soft:#f7f9ff;
-      --grid:#0e1b3514; --brand:#3b82f6; --accent:#8f9bff; --ring:#cfe2ff;
-      --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --chip:#fff; --chip-border:#e6ecff;
+      --ink:#0f1a33; --muted:#5b6b93; --bg:#fbfdff; --card:#ffffff;
+      --line:#e8eeff; --ring:#dbe6ff;
+      --blue:#6d8bff; --sky:#a9c5ff; --mint:#63e0c1; --sun:#ffd96b; --rose:#ff9fb9; --grape:#b89cff;
+      --shadow-1:0 10px 26px rgba(18,32,68,.10);
+      --shadow-2:0 22px 52px rgba(18,32,68,.16);
     }
+
     html,body{height:100%}
     body{
-      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-      color:var(--ink); background:var(--bg);
-      background-image:
-        radial-gradient(36vmax 36vmax at 12% 6%, #eef4ff 0%, transparent 70%),
-        radial-gradient(32vmax 32vmax at 88% 0%, #f3f6ff 0%, transparent 70%),
-        radial-gradient(30vmax 30vmax at 10% 90%, #f7faff 0%, transparent 70%);
+            font-family: Nunito, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+
+      color:var(--ink);
+      background:
+        radial-gradient(42vmax 42vmax at 12% 6%, #eef3ff 0%, transparent 70%),
+        radial-gradient(32vmax 32vmax at 88% -8%, #f6f8ff 0%, transparent 70%),
+        var(--bg);
       background-attachment: fixed;
     }
-    .page-header{
-      background: linear-gradient(180deg, #ffffff, #f7faff);
-      border: 1px solid #e6ecff; border-radius:20px; padding:24px;
-      box-shadow: 0 18px 44px rgba(13,31,64,.08); position:relative;
+    /* Do NOT style .navbar here so it matches nav.html exactly */
+
+/*    .container{max-width:1120px}*/
+
+    /* ensure content clears sticky navbar (from nav.html) */
+/*    main{ margin-top: 18px; }*/
+
+    /* playful blobs */
+    .blob{position:absolute; z-index:-1; filter: blur(24px); opacity:.55; pointer-events:none; animation: floaty 9s ease-in-out infinite;}
+    .blob.b1{ width:280px; height:280px; top:-80px; right:-60px; background:radial-gradient(circle at 30% 30%, var(--sky), transparent 62%);}
+    .blob.b2{ width:240px; height:240px; bottom:-70px; left:-70px; background:radial-gradient(circle at 60% 40%, #eaf2ff, transparent 60%); animation-delay:1.2s;}
+    @keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+
+    /* hero */
+    .hero{
+      position:relative; isolation:isolate; overflow:hidden;
+      border:1px solid var(--line); border-radius:28px;
+      background:linear-gradient(180deg,#ffffff 0%, #f6f8ff 100%);
+      box-shadow:var(--shadow-2); padding:28px;
     }
-    .page-header::after{
-      content:""; position:absolute; left:20px; right:20px; bottom:-1px; height:2px;
-      background: linear-gradient(90deg, transparent, #cfe0ff, #e0e7ff, transparent);
-      opacity:.9; border-radius:2px;
+    .tag{display:inline-flex; align-items:center; gap:.5rem; background:#fff; border:1px solid var(--line); border-radius:999px; padding:.36rem .8rem; font-weight:900; letter-spacing:.2px; box-shadow:var(--shadow-1);}
+    .tag i{color:var(--blue)}
+    .h-title{font-family:Fredoka,Nunito,sans-serif; font-weight:800; letter-spacing:.2px; margin:.6rem 0 .25rem; color:var(--ink)}
+    .h-sub{color:var(--muted)}
+
+    .kpis{display:flex; gap:.5rem; margin-top:.6rem}
+    .kpi{display:inline-flex; align-items:baseline; gap:.35rem; background:#fff; border:1px solid var(--line); border-radius:14px; padding:.44rem .7rem; font-weight:900; color:#2a3b6b; box-shadow:var(--shadow-1)}
+    .kpi b{font-size:1.06rem} .kpi small{font-size:.72rem; font-weight:800; color:#6c7da5}
+
+    .progress{height:14px; border:1px solid #e2ebff; background:#eef3ff; border-radius:999px; overflow:hidden}
+    .progress-bar{background:linear-gradient(90deg,var(--blue),var(--sky)); font-size:.72rem; font-weight:900}
+
+    .how{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:14px}
+    .step{display:flex; align-items:center; gap:.6rem; background:#fff; border:1px solid var(--line); border-radius:14px; padding:.55rem .75rem; font-weight:800; color:#243764}
+    .step:nth-child(1) i{color:var(--blue)} .step:nth-child(2) i{color:var(--mint)} .step:nth-child(3) i{color:#f59e0b}
+    @media (max-width:767.98px){.how{grid-template-columns:1fr}}
+
+    .s-title{font-family:Fredoka,Nunito,sans-serif; font-weight:800; letter-spacing:.2px; color:#14203d; font-size:clamp(20px,2.6vw,24px); margin:0}
+    .s-sub{color:var(--muted)}
+
+    /* level cards */
+    .pack{
+      position:relative; height:100%; overflow:hidden;
+      border:1px solid var(--line); border-radius:22px; background:var(--card);
+      background:
+        radial-gradient(120px 100px at 110% -10%, #f1f5ff 0%, transparent 65%),
+        linear-gradient(180deg,#ffffff 0%, #f7f9ff 100%);
+      box-shadow:var(--shadow-1);
+      transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease;
     }
-    .kicker{
-      display:inline-flex; align-items:center; gap:.45rem;
-      padding:.28rem .6rem; border-radius:999px; font-weight:800; font-size:.78rem;
-      color:#0e1b35; background:#fff; border:1px solid #e6ecff;
+    .pack:hover{ transform:translateY(-3px); box-shadow:var(--shadow-2); border-color:#d7e3ff }
+    .spine{ position:absolute; inset:0 auto 0 0; width:10px; }
+    .spine.lv1{ background:linear-gradient(180deg,var(--sky),var(--blue)) }
+    .spine.lv2{ background:linear-gradient(180deg,var(--mint),#36d3a4) }
+    .spine.lv3{ background:linear-gradient(180deg,var(--sun),#ffb94a) }
+    .spine.lv4{ background:linear-gradient(180deg,var(--rose),#ff86a4) }
+    .spine.lv5{ background:linear-gradient(180deg,var(--grape),#8e6fff) }
+
+    .p-body{ padding:26px 24px 24px 26px; display:flex; flex-direction:column; height:100%; gap:12px; }
+    .p-title{ font-family:Fredoka,Nunito,sans-serif; font-weight:800; font-size:20px; letter-spacing:.2px; margin:0 }
+    .p-title small{ font-weight:900; color:#6b79a4 }
+    .p-sub{ color:#5a678d; font-weight:700 }
+
+    .p-cheer{
+      margin:2px 0 2px;
+      font-weight:500; color:#23345e;
+      background:linear-gradient(90deg,var(--blue),var(--sky));
+      -webkit-background-clip:text; background-clip:text; color:transparent;
+      letter-spacing:.15px;
     }
-    .kicker i{ color:var(--brand) }
-    .progress{ height:12px; background:#eef3ff; border-radius:999px; overflow:hidden; border:1px solid #e2ebff; }
-    .progress-bar{ background: linear-gradient(90deg, var(--brand), var(--accent)); color:#fff; font-size:.72rem; font-weight:800; letter-spacing:.2px; }
-    .section-title{ font-weight:800; letter-spacing:.2px; font-size:clamp(18px,2.5vw,20px); color:#1f2b46; margin-bottom:.25rem; }
-    .section-sub{ color:var(--muted); }
-    .quiz-card{
-      border: 1px solid #e6ecff; background: linear-gradient(180deg, #ffffff, #f7faff);
-      border-radius:18px; box-shadow: 0 10px 28px rgba(13,31,64,.06);
-      transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
-      position:relative; overflow:hidden; height:100%;
+
+    .dots{ display:flex; gap:6px; align-items:center }
+    .dots i{ font-size:10px; opacity:.3 } .dots .on{ opacity:1 }
+
+    .btn-go{ border:0; border-radius:14px; padding:.66rem 1rem; font-weight:900; background:linear-gradient(90deg,var(--blue),var(--sky)); color:#0f1a33!important; box-shadow:0 12px 26px rgba(109,139,255,.28); text-decoration:none }
+    .btn-ghost{ border:2px solid var(--ring); border-radius:14px; padding:.6rem 1rem; background:linear-gradient(180deg,#fff,#f9fbff); color:#2a3b6b!important; font-weight:900; text-decoration:none }
+    .lock{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; background:linear-gradient(180deg,#ffffffd6,#f6f9ffd6); border:2px dashed var(--ring); border-radius:22px; color:#1f2b46; font-weight:900; backdrop-filter: blur(4px) }
+
+    .pack-soon{ background:repeating-linear-gradient(135deg, #ffffff 0 16px, #f7faff 16px 32px); border:2px dashed var(--ring); }
+    .soon-badge{ display:inline-flex; align-items:center; gap:.4rem; font-weight:900; font-size:.82rem; color:#0f1a33; background:linear-gradient(90deg,var(--mint),#7be9cf); border-radius:999px; padding:.25rem .85rem; box-shadow:0 8px 18px rgba(20,150,120,.18); }
+
+    .foot-tip{ text-align:center; color:#6b769a; font-weight:800; margin-top:14px }
+
+    /* overlay */
+    #loadingOverlay{
+      position:fixed; inset:0; z-index:99999; display:none; align-items:center; justify-content:center; flex-direction:column;
+      background:
+        radial-gradient(40vmax 40vmax at 20% 10%, rgba(238,244,255,.94), transparent 70%),
+        radial-gradient(36vmax 36vmax at 80% 0%, rgba(243,246,255,.94), transparent 70%),
+        rgba(255,255,255,.75);
+      backdrop-filter: blur(6px);
     }
-    .quiz-card::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:6px; background: linear-gradient(180deg, var(--brand), var(--accent)); opacity:.9; }
-    .quiz-card:hover{ transform: translateY(-3px); box-shadow: 0 16px 36px rgba(13,31,64,.10); border-color:#d9e6ff; }
-    .quiz-card .card-title{ font-weight:800; color:#0e1b35; letter-spacing:.2px; }
-    .badge-tone{ display:inline-flex; align-items:center; gap:.35rem; background: linear-gradient(180deg, var(--chip), #f3f7ff); color:#223357; border:1px solid var(--chip-border); font-weight:700; border-radius:999px; padding:.18rem .5rem; font-size:.72rem; }
-    .meta{ color:#4b5567; }
-    .btn-action{ font-weight:800; border-radius:12px; border:0; background: linear-gradient(90deg, var(--brand), var(--accent)); color:#0f1a33 !important; box-shadow: 0 8px 18px rgba(59,130,246,.20); text-decoration:none; }
-    .btn-locked{ border-radius:12px; font-weight:800; background:linear-gradient(180deg,#fff,#f8faff); border:1px solid #e6ecff; color:#6b7280 !important; }
-    .btn-locked:disabled{ opacity:1; }
-    .lock-overlay{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background: linear-gradient(180deg, #ffffffaa, #f7faffa); color:#1f2b46; font-weight:800; border-radius:18px; border:1px dashed #d9e6ff; backdrop-filter: blur(4px); }
-    .kpi{ display:inline-flex; align-items:baseline; gap:.35rem; padding:.35rem .55rem; border-radius:12px; background:#fff; border:1px solid #e6ecff; color:#223357; font-weight:800; }
-    .kpi b{ font-size:.95rem } .kpi small{ font-size:.72rem; font-weight:700; color:#60719a }
-    .dim{ color:#60719a }
-    .loading-overlay{ position: fixed; inset: 0; z-index: 99999; display: none; align-items: center; justify-content: center; flex-direction: column; background:
-        radial-gradient(40vmax 40vmax at 20% 10%, rgba(238,244,255,.9), transparent 70%),
-        radial-gradient(36vmax 36vmax at 80% 0%, rgba(243,246,255,.9), transparent 70%),
-        radial-gradient(34vmax 34vmax at 10% 90%, rgba(247,250,255,.9), transparent 70%),
-        rgba(255,255,255,.7); backdrop-filter: blur(6px); }
-    .loading-card{ background: linear-gradient(180deg, #ffffff, #f7faff); border:1px solid #e6ecff; border-radius:18px; box-shadow: 0 18px 44px rgba(13,31,64,.12); padding:28px 26px; text-align:center; max-width: 420px; width: calc(100% - 32px); }
-    .loading-title{ font-weight: 900; color:#0f1a33; letter-spacing:.2px; margin-top:12px; background: linear-gradient(90deg, var(--brand), var(--accent)); -webkit-background-clip:text; background-clip:text; color: transparent; }
-    .loading-sub{ color:#4b5567; }
+    .overlay-card{ background:linear-gradient(180deg,#fff,#f7faff); border:1px solid var(--line); border-radius:22px; box-shadow:var(--shadow-2); padding:26px; width:min(480px, calc(100% - 32px)); text-align:center }
+    .overlay-title{ font-family:Fredoka,Nunito,sans-serif; font-weight:800; letter-spacing:.2px; background:linear-gradient(90deg,var(--blue),var(--sky)); -webkit-background-clip:text; background-clip:text; color:transparent; margin-top:12px }
+
   </style>
 </head>
 <body>
   {% include 'nav.html' %}
 
-  <!-- Loading Overlay -->
-  <div id="loadingOverlay" class="loading-overlay" aria-hidden="true" aria-live="polite">
-    <div class="loading-card" role="status" aria-label="Preparing quiz">
+  <!-- Loading overlay -->
+  <div id="loadingOverlay" aria-hidden="true" aria-live="polite">
+    <div class="overlay-card">
       <div class="d-flex justify-content-center"><div class="spinner-border" role="img" aria-label="Loading"></div></div>
-      <h2 class="h5 loading-title">Building your bingo board…</h2>
-      <p class="loading-sub mb-0">It takes a moment to generate the quiz...</p>
+      <h2 class="h5 overlay-title">Building your bingo board…</h2>
+      <p class="mb-0" style="color:var(--muted)">It takes a moment to generate the quiz.</p>
     </div>
   </div>
 
-  <div class="container pb-5 mt-4">
-    <!-- Header -->
-    <div class="page-header mb-4 d-flex flex-column flex-md-row align-items-md-center justify-content-between">
-      <div class="pe-md-4">
-        <span class="kicker"><i class="bi bi-magic" aria-hidden="true"></i> Quick start</span>
-        <h1 class="h3 mb-1 mt-2" style="font-weight:800; letter-spacing:.2px; color:#0f1a33">
-          Welcome, {{ username }}
-        </h1>
-        <div class="d-flex gap-2 mt-1" role="group" aria-label="User KPIs">
-          <span class="kpi"><b>{{ user_level|default(1) }}</b><small>level</small></span>
-          <span class="kpi"><b>{{ (user_xp|default(0)) % 100 }}</b><small>XP</small></span>
+  <main class="container py-4 pb-5">
+    <!-- HERO -->
+    <section class="hero mb-4">
+      <span class="blob b1"></span>
+      <span class="blob b2"></span>
+
+      <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between">
+        <div class="pe-md-4">
+          <span class="tag"><i class="bi bi-magic" aria-hidden="true"></i> Quick start</span>
+          <h1 class="h-title">Welcome, {{ username }}</h1>
+          <p class="h-sub">Pick a level, solve a 4×4 bingo, and earn shiny XP.</p>
+
+          <div class="kpis" role="group" aria-label="User KPIs">
+            <span class="kpi"><b>{{ user_level|default(1) }}</b><small>level</small></span>
+            <span class="kpi"><b>{{ (user_xp|default(0)) % 100 }}</b><small>XP</small></span>
+          </div>
+
+          <div class="how" aria-label="How it works">
+            <div class="step"><i class="bi bi-joystick"></i> Choose level</div>
+            <div class="step"><i class="bi bi-grid-3x3-gap"></i> Clear lines</div>
+            <div class="step"><i class="bi bi-stars"></i> Gain XP</div>
+          </div>
+        </div>
+
+        <div class="mt-4 mt-md-0 w-100" style="max-width:520px;">
+          {% set current_xp = (user_xp|default(0)) % 100 %}
+          {% if (user_level|default(1)) < 5 %}
+            <div class="small mb-2" style="color:#6a779d">XP Progress ({{ current_xp }}/100)</div>
+            <div class="progress" aria-label="XP Progress">
+              <div class="progress-bar" role="progressbar" style="width: {{ current_xp }}%;" aria-valuenow="{{ current_xp }}" aria-valuemin="0" aria-valuemax="100">
+                {{ current_xp }} XP
+              </div>
+            </div>
+            <div class="small mt-1 text-end" style="color:#6a779d">{{ 100 - current_xp }} XP to Level {{ (user_level|default(1)) + 1 }}</div>
+          {% else %}
+            <div class="small mb-1" style="color:#6a779d">Max Level Reached</div>
+            <div class="h5 mb-0" style="color:#16a34a; font-weight:900">Expert</div>
+          {% endif %}
         </div>
       </div>
+    </section>
 
-      <!-- XP Progress Bar -->
-      <div class="mt-3 mt-md-0 w-100" style="max-width:420px;">
-        {% set current_xp = (user_xp|default(0)) % 100 %}
-        {% if (user_level|default(1)) < 5 %}
-          <div class="small mb-2 dim">XP Progress ({{ current_xp }}/100)</div>
-          <div class="progress" aria-label="XP Progress">
-            <div class="progress-bar" role="progressbar"
-                 style="width: {{ current_xp }}%;"
-                 aria-valuenow="{{ current_xp }}" aria-valuemin="0" aria-valuemax="100">
-              {{ current_xp }} XP
-            </div>
-          </div>
-          <div class="small mt-1 text-end dim">{{ 100 - current_xp }} XP to Level {{ (user_level|default(1)) + 1 }}</div>
-        {% else %}
-          <div class="small mb-1 dim">Max Level Reached</div>
-          <div class="h5 mb-0" style="color:#16a34a; font-weight:800">Expert</div>
-        {% endif %}
-      </div>
-    </div>
+    <!-- LEVEL SELECT -->
+    <header class="mb-2">
+      <h2 class="s-title">Choose a Bingo Board</h2>
+      <div class="s-sub">All levels are 4×4 (16 cells). Clear rows, columns, or diagonals for bonus XP.</div>
+    </header>
 
-    <!-- Level Selector -->
-    <div class="mb-2">
-      <h2 class="section-title">Choose a Bingo Board</h2>
-      <div class="section-sub">Solve a 4×4 board (16 cells). Complete lines for bonus XP.</div>
-    </div>
-
-    <div class="row g-3">
+    <section class="row g-3">
       {% for lvl in range(1,6) %}
         {% set locked = (lvl > (user_level|default(1))) %}
         <div class="col-12 col-sm-6 col-lg-4">
-          <div class="card quiz-card position-relative {% if locked %}card-locked{% endif %}">
-            <div class="card-body d-flex flex-column">
-              <div class="d-flex align-items-center justify-content-between mb-2">
-                <h5 class="card-title mb-0">
-                  Level {{ lvl }}
-                  {% if lvl == 1 %}<span class="badge-tone ms-1">Beginner</span>{% endif %}
-                  {% if lvl == 2 %}<span class="badge-tone ms-1">Novice</span>{% endif %}
-                  {% if lvl == 3 %}<span class="badge-tone ms-1">Intermediate</span>{% endif %}
-                  {% if lvl == 4 %}<span class="badge-tone ms-1">Advanced</span>{% endif %}
-                  {% if lvl == 5 %}<span class="badge-tone ms-1">Expert</span>{% endif %}
-                </h5>
-                {% if locked %}
-                  <i class="bi bi-lock-fill" style="color:var(--bad);" aria-label="Locked"></i>
-                {% else %}
-                  <i class="bi bi-unlock" style="color:var(--ok);" aria-label="Unlocked"></i>
-                {% endif %}
+          <article class="pack">
+            <span class="spine lv{{ lvl }}"></span>
+            <div class="p-body">
+              <div class="d-flex align-items-start justify-content-between">
+                <div>
+                  <h3 class="p-title">
+                    {% if lvl == 1 %}Beginner{% endif %}
+                    {% if lvl == 2 %}Novice{% endif %}
+                    {% if lvl == 3 %}Intermediate{% endif %}
+                    {% if lvl == 4 %}Advanced{% endif %}
+                    {% if lvl == 5 %}Expert{% endif %}
+                    <small>(lv{{ lvl }})</small>
+                  </h3>
+                  <div class="p-sub">4×4 bingo • 16 cells • 3 lives</div>
+                  {% if lvl == 1 %}<p class="p-cheer">Let’s warm up! Easy peasy—perfect for a quick win!</p>{% endif %}
+                  {% if lvl == 2 %}<p class="p-cheer">You’re getting stronger! Try this level for a cool challenge!</p>{% endif %}
+                  {% if lvl == 3 %}<p class="p-cheer">Brain power time! Show off your growing skills!</p>{% endif %}
+                  {% if lvl == 4 %}<p class="p-cheer">WOW! You’ve come far—this level is a real adventure!</p>{% endif %}
+                  {% if lvl == 5 %}<p class="p-cheer">Only the brave reach here—can you master the toughest board?</p>{% endif %}
+                </div>
+                <div class="dots" aria-label="Difficulty">
+                  <i class="bi bi-circle-fill {% if lvl>=1 %}on{% endif %}"></i>
+                  <i class="bi bi-circle-fill {% if lvl>=2 %}on{% endif %}"></i>
+                  <i class="bi bi-circle-fill {% if lvl>=3 %}on{% endif %}"></i>
+                  <i class="bi bi-circle-fill {% if lvl>=4 %}on{% endif %}"></i>
+                  <i class="bi bi-circle-fill {% if lvl>=5 %}on{% endif %}"></i>
+                </div>
               </div>
 
-              <div class="meta mb-3">4×4 Bingo • 16 cells • 3 lives</div>
-
-              <div class="d-grid d-sm-flex gap-2 mt-auto">
+              <div class="mt-auto d-grid d-sm-flex gap-2">
                 {% if locked %}
-                  <button class="btn btn-locked w-100" disabled aria-disabled="true">
-                    <i class="bi bi-lock-fill me-1" aria-hidden="true"></i> Locked
-                  </button>
+                  <a class="btn-ghost w-100 disabled" aria-disabled="true">Reach Level {{ lvl }} to unlock</a>
                 {% else %}
-                  <a class="btn btn-action start-quiz-btn flex-fill"
-                     href="{{ url_for('start_quiz', level=lvl) }}"
-                     data-level="{{ lvl }}"
-                     role="button" aria-label="Continue Level {{ lvl }}">
+                  <a class="btn-go start-quiz-btn flex-fill" href="{{ url_for('start_quiz', level=lvl) }}" data-level="{{ lvl }}" role="button" aria-label="Continue Level {{ lvl }}">
                     <i class="bi bi-play-fill me-1" aria-hidden="true"></i> Continue
                   </a>
-                  <a class="btn btn-outline-danger new-quiz-btn flex-fill"
-                     href="{{ url_for('start_quiz', level=lvl) }}?new=1"
-                     data-level="{{ lvl }}"
-                     role="button" aria-label="Start new quiz for Level {{ lvl }}">
+                  <a class="btn-ghost new-quiz-btn flex-fill" href="{{ url_for('start_quiz', level=lvl) }}?new=1" data-level="{{ lvl }}" role="button" aria-label="Start new quiz for Level {{ lvl }}">
                     <i class="bi bi-arrow-repeat me-1" aria-hidden="true"></i> New Quiz
                   </a>
                 {% endif %}
               </div>
             </div>
-
             {% if locked %}
-              <div class="lock-overlay" aria-hidden="true">Reach Level {{ lvl }} to unlock</div>
+              <div class="lock" aria-hidden="true"><i class="bi bi-shield-lock me-2"></i> Reach Level {{ (lvl-1) if lvl>1 else 1 }} to unlock</div>
             {% endif %}
-          </div>
+          </article>
         </div>
       {% endfor %}
-    </div>
-  </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+      <!-- Coming-soon card -->
+      <div class="col-12 col-sm-6 col-lg-4">
+        <article class="pack pack-soon">
+          <div class="p-body">
+            <div class="d-flex align-items-start justify-content-between">
+              <div>
+                <h3 class="p-title">More Levels Coming Soon</h3>
+                <div class="p-sub">We currently offer up to Expert (lv5).</div>
+                <p class="p-cheer">New worlds are being built… get ready for Level 6 and beyond!</p>
+              </div>
+              <span class="soon-badge"><i class="bi bi-rocket-takeoff"></i> Soon</span>
+            </div>
+            <div class="mt-auto d-grid">
+              <a class="btn-ghost w-100 disabled" aria-disabled="true">Stay tuned for lv6+</a>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <p class="foot-tip">Tip: clearing two lines at once gives extra XP.</p>
+  </main>
+
   <script>
-  (function(){
-    const overlay = document.getElementById('loadingOverlay');
-    let navByButton = false;
-    function showOverlay(){ if(overlay){ overlay.style.display='flex'; overlay.setAttribute('aria-hidden','false'); } }
-    function hideOverlay(){ if(overlay){ overlay.style.display='none'; overlay.setAttribute('aria-hidden','true'); } }
+    (function(){
+      const overlay = document.getElementById('loadingOverlay');
+      const show = ()=>{ overlay.style.display='flex'; overlay.setAttribute('aria-hidden','false'); };
+      const hide = ()=>{ overlay.style.display='none'; overlay.setAttribute('aria-hidden','true'); };
 
-    document.addEventListener('click', function(e){
-      const a = e.target.closest('.start-quiz-btn, .new-quiz-btn');
-      if (!a) return;
-      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button === 1) return;
-      e.preventDefault();
-      a.classList.add('disabled');
-      a.setAttribute('aria-disabled','true');
-      a.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> Preparing…';
+      document.addEventListener('click', function(e){
+        const a = e.target.closest('.start-quiz-btn, .new-quiz-btn');
+        if(!a) return;
+        if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button===1) return;
+        e.preventDefault();
 
-      if (a.classList.contains('new-quiz-btn')) {
-        try { Object.keys(localStorage).forEach(k => { if (k.startsWith('bingo_state_')) localStorage.removeItem(k); }); } catch(_) {}
-      }
+        a.classList.add('disabled');
+        a.setAttribute('aria-disabled','true');
+        a.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> Preparing…';
 
-      navByButton = true;
-      if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) { showOverlay(); }
-      setTimeout(()=> { window.location.href = a.getAttribute('href'); }, 50);
-    }, false);
+        if(a.classList.contains('new-quiz-btn')){
+          try{ Object.keys(localStorage).forEach(k=>{ if(k.startsWith('bingo_state_')) localStorage.removeItem(k); }); }catch(_){}
+        }
+        if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches) show();
+        setTimeout(()=>{ window.location.href = a.getAttribute('href'); }, 70);
+      }, false);
 
-    window.addEventListener('beforeunload', function(){ if (navByButton) showOverlay(); });
-    window.addEventListener('pageshow', function(){ hideOverlay(); });
-    document.addEventListener('DOMContentLoaded', hideOverlay);
-  })();
+      window.addEventListener('pageshow', hide);
+      document.addEventListener('DOMContentLoaded', hide);
+    })();
   </script>
 </body>
 </html>
