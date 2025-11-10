@@ -224,83 +224,112 @@ def _stable_seed_from_args(path: str, q, category, theme, age, difficulty):
     # Stable 32-bit integer from SHA1
     return int(hashlib.sha1(key.encode("utf-8")).hexdigest(), 16) & 0xFFFFFFFF
 
-
-@app.route("/stories")
+@app.route("/stories", methods=["GET"])
 def stories():
-    q = request.args.get("q", "").strip()
-    category = request.args.get("category", "").strip()
-    theme = request.args.get("theme", "").strip()
-    age = request.args.get("age", "").strip()
-    difficulty = request.args.get("difficulty", "").strip()
-    page = max(1, int(request.args.get("page", 1)))
+    if "username" not in session:
+        return redirect(url_for("login"))
+    username = session["username"]
+    db = get_db()
 
-    # 1) Load all stories from your catalog (JSON, file, etc.)
-    #    This is the same code you already had that builds items_all (list of dicts).
-    items_all = load_all_catalog_stories()  # <-- your existing loader
+    # user header (unchanged)
+    u = db.execute("SELECT level, xp, title_code FROM users WHERE username=?", (username,)).fetchone()
+    user_level = u["level"] if u else 1
+    user_xp    = u["xp"] if u else 0
+    title_info = TITLES.get((u["title_code"] or ""), DEFAULT_TITLE)
+    display_title = title_info["title"]
+    title_icon    = title_info["icon"]
 
-    # 2) Apply filters (same as before)
-    def _match(s):
-        if q and (q.lower() not in (s.get("title", "").lower() + " " + " ".join(s.get("categories", []))).lower()):
-            return False
-        if category and category.lower() not in [c.lower() for c in s.get("categories", [])]:
-            return False
-        if theme and theme.lower() not in (s.get("theme", "") or "").lower():
-            return False
-        if age:
-            try:
-                a = int(age)
-                if not (int(s.get("age_min", 0)) <= a <= int(s.get("age_max", 99))):
-                    return False
-            except Exception:
-                pass
-        if difficulty:
-            try:
-                if int(s.get("difficulty", 0)) != int(difficulty):
-                    return False
-            except Exception:
-                pass
-        return True
+    # filters
+    q        = (request.args.get("q") or "").strip()
+    category = (request.args.get("category") or "").strip()
+    theme    = (request.args.get("theme") or "").strip()
+    try:
+        age = int(request.args.get("age")) if request.args.get("age") else None
+    except:
+        age = None
+    try:
+        difficulty = int(request.args.get("difficulty")) if request.args.get("difficulty") else None
+    except:
+        difficulty = None
 
-    items_all = [s for s in items_all if _match(s)]
+    # NEW: optional "ready only" toggle
+    ready_only = (request.args.get("ready") == "1")
 
-    # 3) Pull the set of already-generated story slugs from DB
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT slug FROM stories_generated")
-    generated_slugs = {row["slug"] for row in cur.fetchall()}
-
-    # 4) Split into two groups
-    already = [s for s in items_all if s.get("slug") in generated_slugs]
-    fresh = [s for s in items_all if s.get("slug") not in generated_slugs]
-
-    # 5) Randomize each group with a stable daily seed so pagination is consistent
-    seed = _stable_seed_from_args(
-        path=request.path, q=q, category=category, theme=theme, age=age, difficulty=difficulty
-    )
-    rng = random.Random(seed)
-    rng.shuffle(already)
-    rng.shuffle(fresh)
-
-    # 6) Concatenate: generated first (random), then the rest (random)
-    items_all = already + fresh
-
-    # 7) Pagination (unchanged except using randomized items_all)
+    # pagination inputs
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except:
+        page = 1
     PAGE_SIZE = 12
     MAX_PAGES = 5
+
+    # fetch all matches (no limit), then ensure records exist
+    items_all = recommend_stories(
+        age=age, difficulty=difficulty, q=q or None,
+        category=category or None, theme=theme or None, limit=None
+    )
+    for s in items_all:
+        try:
+            ensure_story_record(s["slug"], s)
+        except Exception:
+            pass
+
+    # Identify which are already generated (content non-empty)
+    generated = set()
+    slugs = tuple(s["slug"] for s in items_all)
+    if slugs:
+        qmarks = ",".join(["?"] * len(slugs))
+        rows = db.execute(
+            f"""
+            SELECT slug FROM stories
+            WHERE slug IN ({qmarks})
+              AND COALESCE(NULLIF(content,''), '') <> ''
+            """,
+            slugs
+        ).fetchall()
+        generated = {r["slug"] for r in rows}
+
+    # If user asked for "ready only", filter here
+    if ready_only:
+        items_all = [s for s in items_all if s["slug"] in generated]
+
+    # ✅ NEW: Randomize ordering, but generated first
+    from datetime import date
+    import random
+
+    gen_items   = [s for s in items_all if s["slug"] in generated]
+    other_items = [s for s in items_all if s["slug"] not in generated]
+
+    # stable seed
+    seed_str = f"{date.today().isoformat()}|{username}|{q}|{category}|{theme}|{age}|{difficulty}"
+    rng = random.Random(seed_str)
+
+    rng.shuffle(gen_items)
+    rng.shuffle(other_items)
+
+    items_all = gen_items + other_items
+
+    # paginate with a hard cap of 5 pages
     total_items = len(items_all)
     total_pages = min(MAX_PAGES, max(1, (total_items + PAGE_SIZE - 1) // PAGE_SIZE))
-    page = max(1, min(page, total_pages))
+    page = min(page, total_pages)
     start = (page - 1) * PAGE_SIZE
-    end = start + PAGE_SIZE
-    items_page = items_all[start:end]
+    end   = start + PAGE_SIZE
+    items = items_all[start:end]
 
     return render_template(
         "stories.html",
-        items=items_page,
+        username=username,
+        user_level=user_level,
+        user_xp=user_xp,
+        display_title=display_title,
+        title_icon=title_icon,
+        items=items,
+        q=q, category=category, theme=theme, age=age, difficulty=difficulty,
         page=page, total_pages=total_pages, page_size=PAGE_SIZE, total_items=total_items,
-        q=q, category=category, theme=theme, age=age, difficulty=difficulty
+        generated_slugs=generated,
+        ready_only=ready_only
     )
-
 
 def seed_achievements(db):
     # tables
