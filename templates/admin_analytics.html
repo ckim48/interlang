@@ -34,18 +34,13 @@ body{
   background:linear-gradient(90deg,transparent,#b3d1ff,#ffdca8,transparent);
   opacity:.9; border-radius:2px;
 }
-
-/* Title area */
 .h-title{
-  margin:0;
-  font-weight:900; letter-spacing:.2px; line-height:1.15;
+  margin:0; font-weight:900; letter-spacing:.2px; line-height:1.15;
   font-size:clamp(20px,2.8vw,24px);
   background:linear-gradient(90deg,#1b2e5a,#3a64f0,#7aa4ff);
   -webkit-background-clip:text; background-clip:text; color:transparent;
 }
 .subtle{ color:var(--muted) }
-
-/* Context chips */
 .pill{
   display:inline-flex; align-items:center; gap:.45rem;
   background:#fff; color:#24345a; font-weight:800;
@@ -53,33 +48,22 @@ body{
   padding:.38rem .8rem; box-shadow:0 8px 22px rgba(20,40,100,.06);
 }
 
-/* ===== Fancy user picker ===== */
-.picker{
-  display:flex; align-items:center; gap:.6rem; flex-wrap:wrap;
-}
-.select-wrap{
-  position:relative; min-width:260px;
-}
+/* ===== Picker / Buttons ===== */
+.picker{ display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; }
+.select-wrap{ position:relative; min-width:260px; }
 .select-wrap .bi{
   position:absolute; left:12px; top:50%; transform:translateY(-50%);
   color:#5b6aa0; pointer-events:none;
 }
 .select-wrap .form-select{
-  padding-left:2.2rem;
-  border-radius:14px;
-  border:1px solid #e3ebff;
-  background:linear-gradient(180deg,#ffffff,#f9fbff);
+  padding-left:2.2rem; border-radius:14px;
+  border:1px solid #e3ebff; background:linear-gradient(180deg,#ffffff,#f9fbff);
   box-shadow:0 10px 26px rgba(18,32,68,.08);
   font-weight:700; color:#223357;
 }
 .select-wrap .form-select:focus{
   border-color:#cfe0ff; box-shadow:0 0 0 4px #e9f1ff;
 }
-.picker .hint{
-  font-size:.85rem; color:#6a769a; font-weight:600;
-}
-
-/* Buttons next to picker */
 .picker .btn-ghost{
   border:1px dashed #e3ebff; color:#2b3d6e; font-weight:800;
   background:#fff; border-radius:12px; padding:.5rem .9rem;
@@ -87,143 +71,212 @@ body{
 .picker .btn-ghost:hover{ background:#f7faff }
 
 /* ===== Cards / charts ===== */
-.cardy{ border:1px solid var(--ring); background:linear-gradient(180deg,#fff,#f7faff); border-radius:16px; box-shadow:0 10px 28px rgba(13,31,64,.06) }
-.dim{color:var(--muted)}
-.kpi{font-weight:800; letter-spacing:.2px;}
+.cardy{
+  border:1px solid var(--ring);
+  background:linear-gradient(180deg,#fff,#f7faff);
+  border-radius:16px; box-shadow:0 10px 28px rgba(13,31,64,.06)
+}
 .chart-box{ position:relative; width:100%; height:320px; }
 .chart-box.tall{ height:360px; }
-.badge-soft{ background:#eef3ff; color:#4360d9; border-radius:8px; }
+.dim{ color:var(--muted) }
 #loadState{ display:none; }
 #inlineErr{ display:none; }
+
+/* ===== Worksheet Detail Table ===== */
+.ws-table-card{
+  background:#ffffff; border:1px solid #e8ecff; border-radius:18px;
+  box-shadow:0 10px 28px rgba(13,31,64,.06); padding:20px;
+}
+.table thead th{
+  background:#f4f6ff; font-size:.9rem; color:#445; border-bottom:1px solid #dde3ff;
+}
+.badge-unlocked{ background:#e6f7ff; color:#005a87; border-radius:8px; font-weight:700; }
+.badge-locked{ background:#ffeaea; color:#8a1d1d; border-radius:8px; font-weight:700; }
+.badge-done{ background:#e8ffe8; color:#0f5b2f; border-radius:8px; font-weight:700; }
+.badge-pending{ background:#fff5d9; color:#885800; border-radius:8px; font-weight:700; }
+
+/* ===== Modals ===== */
+.modal-lg{ max-width:900px; }
+.qcard{
+  border:1px solid #eef1ff; border-radius:12px; padding:12px; background:#fff;
+}
+.qhead{ font-weight:700; color:#223357; margin-bottom:.25rem; }
+.qans{ white-space:pre-wrap; }
+.qfbk{ font-size:.9rem; }
+.small-muted{ color:#6c7899; font-size:.86rem; }
 </style>
 </head>
 <body>
-  {% include 'nav.html' %}
 
-  <div class="container pb-5 mt-4">
+{% include 'nav.html' %}
 
-    <!-- ===== Header ===== -->
-    <div class="page-head mb-3">
-      <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
-        <div>
-          <h1 class="h-title">Admin • Student Analytics</h1>
-          <div class="d-flex align-items-center gap-2 flex-wrap mt-2">
-            <span class="pill"><i class="bi bi-speedometer2"></i> Overview</span>
-            <span class="pill"><i class="bi bi-graph-up-arrow"></i> Live Charts</span>
-          </div>
-          <div id="pageSubtitle" class="subtle mt-2">Per-student progress across quizzes, worksheets, stories, and XP</div>
+<div class="container pb-5 mt-4">
+
+  <!-- ===== Header ===== -->
+  <div class="page-head mb-3">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
+      <div>
+        <h1 class="h-title">Admin • Student Analytics</h1>
+        <div class="d-flex align-items-center gap-2 flex-wrap mt-2">
+          <span class="pill"><i class="bi bi-speedometer2"></i> Overview</span>
+          <span class="pill"><i class="bi bi-graph-up-arrow"></i> Live Charts</span>
+          <span class="pill"><i class="bi bi-journal-text"></i> Worksheets</span>
         </div>
-
-        <div class="picker">
-          <div class="select-wrap">
-            <i class="bi bi-person"></i>
-            <label for="userSelect" class="visually-hidden">Select a student</label>
-            <select id="userSelect" class="form-select" {% if users|length==0 %}disabled{% endif %}>
-              {% if users|length==0 %}
-                <option value="">No users yet</option>
-              {% else %}
-                {% for uname in users %}
-                  <option value="{{ uname }}" {% if uname==selected_user %}selected{% endif %}>{{ uname }}</option>
-                {% endfor %}
-              {% endif %}
-            </select>
-          </div>
-          <button type="button" id="btnReload" class="btn btn-ghost">
-            <i class="bi bi-arrow-clockwise"></i> Reload
-          </button>
-          <div id="loadState" class="text-secondary small">Loading…</div>
-          <div class="w-100"></div>
-          <div class="hint">Tip: pick a student to populate all charts below.</div>
-        </div>
+        <div id="pageSubtitle" class="subtle mt-2">Select a student to view analytics.</div>
       </div>
 
-      <div id="inlineErr" class="alert alert-warning mt-3 mb-0 py-2 px-3 small">
-        Couldn’t load analytics for the selected user. Please try again or check the data API.
+      <div class="picker">
+        <div class="select-wrap">
+          <i class="bi bi-person"></i>
+          <select id="userSelect" class="form-select" {% if not users %}disabled{% endif %}>
+            {% if not users %}
+              <option>No users</option>
+            {% else %}
+              {% for uname in users %}
+                <option value="{{ uname }}" {% if uname==selected_user %}selected{% endif %}>{{ uname }}</option>
+              {% endfor %}
+            {% endif %}
+          </select>
+        </div>
+        <button id="btnReload" class="btn btn-ghost">
+          <i class="bi bi-arrow-clockwise"></i> Reload
+        </button>
+        <div id="loadState" class="text-secondary small">Loading…</div>
+        <div class="w-100"></div>
+        <div class="hint small text-secondary">Charts and worksheet details update instantly.</div>
       </div>
     </div>
 
-    <!-- ===== KPIs ===== -->
-    <div class="row g-3 mb-3">
-      <div class="col-md-3">
-        <div class="cardy p-3 h-100">
-          <div class="small dim">Total Quizzes</div>
-          <div class="h3 mb-0" id="kQuizzes">—</div>
-        </div>
-      </div>
-      <div class="col-md-3">
-        <div class="cardy p-3 h-100">
-          <div class="small dim">Overall Accuracy</div>
-          <div class="h3 mb-0"><span id="kAcc">—</span><span class="h6 dim"> %</span></div>
-        </div>
-      </div>
-      <div class="col-md-3">
-        <div class="cardy p-3 h-100">
-          <div class="small dim">Stories Read</div>
-          <div class="h3 mb-0" id="kStories">—</div>
-        </div>
-      </div>
-      <div class="col-md-3">
-        <div class="cardy p-3 h-100">
-          <div class="small dim">Total XP</div>
-          <div class="h3 mb-0" id="kXP">—</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ===== Charts ===== -->
-    <div class="row g-3 mb-3">
-      <div class="col-lg-6">
-        <div class="cardy p-3 h-100">
-          <div class="fw-bold mb-2">1) Quiz Attempts & Accuracy (last 30 days)</div>
-          <div class="chart-box"><canvas id="cAttemptsAcc"></canvas></div>
-        </div>
-      </div>
-      <div class="col-lg-6">
-        <div class="cardy p-3 h-100">
-          <div class="fw-bold mb-2">2) Quiz Accuracy by Level</div>
-          <div class="chart-box"><canvas id="cAccByLevel"></canvas></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="row g-3 mb-3">
-      <div class="col-lg-6">
-        <div class="cardy p-3 h-100">
-          <div class="fw-bold mb-2">3) Worksheet Progress (Weeks Unlocked vs Submitted)</div>
-          <div class="chart-box"><canvas id="cWorksheets"></canvas></div>
-          <div class="small dim mt-1">Shows current 4-week cycle status for this user.</div>
-        </div>
-      </div>
-      <div class="col-lg-6">
-        <div class="cardy p-3 h-100">
-          <div class="fw-bold mb-2">4) Stories Read Over Time</div>
-          <div class="chart-box"><canvas id="cStories"></canvas></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="row g-3 mb-4">
-      <div class="col-lg-6">
-        <div class="cardy p-3 h-100">
-          <div class="fw-bold mb-2">5) XP Growth (cumulative)</div>
-          <div class="chart-box"><canvas id="cXP"></canvas></div>
-        </div>
-      </div>
-      <div class="col-lg-6">
-        <div class="cardy p-3 h-100">
-          <div class="fw-bold mb-2">6) Activity Mix</div>
-          <div class="chart-box tall"><canvas id="cActivity"></canvas></div>
-        </div>
-      </div>
+    <div id="inlineErr" class="alert alert-warning mt-3 mb-0 py-2 px-3 small">
+      Couldn’t load analytics for this user.
     </div>
   </div>
 
+  <!-- === KPI Cards === -->
+  <div class="row g-3 mb-3">
+    <div class="col-md-3"><div class="cardy p-3 h-100"><div class="small dim">Total Quizzes</div><div class="h3 mb-0" id="kQuizzes">—</div></div></div>
+    <div class="col-md-3"><div class="cardy p-3 h-100"><div class="small dim">Accuracy</div><div class="h3 mb-0"><span id="kAcc">—</span>%</div></div></div>
+    <div class="col-md-3"><div class="cardy p-3 h-100"><div class="small dim">Stories</div><div class="h3 mb-0" id="kStories">—</div></div></div>
+    <div class="col-md-3"><div class="cardy p-3 h-100"><div class="small dim">XP</div><div class="h3 mb-0" id="kXP">—</div></div></div>
+  </div>
+
+  <!-- === Charts === -->
+  <div class="row g-3 mb-3">
+    <div class="col-lg-6"><div class="cardy p-3 h-100"><div class="fw-bold mb-2">Quiz Attempts & Accuracy</div><div class="chart-box"><canvas id="cAttemptsAcc"></canvas></div></div></div>
+    <div class="col-lg-6"><div class="cardy p-3 h-100"><div class="fw-bold mb-2">Accuracy by Level</div><div class="chart-box"><canvas id="cAccByLevel"></canvas></div></div></div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-lg-6"><div class="cardy p-3 h-100"><div class="fw-bold mb-2">Worksheet Progress</div><div class="chart-box"><canvas id="cWorksheets"></canvas></div></div></div>
+    <div class="col-lg-6"><div class="cardy p-3 h-100"><div class="fw-bold mb-2">Stories Over Time</div><div class="chart-box"><canvas id="cStories"></canvas></div></div></div>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-lg-6"><div class="cardy p-3 h-100"><div class="fw-bold mb-2">XP Growth</div><div class="chart-box"><canvas id="cXP"></canvas></div></div></div>
+    <div class="col-lg-6"><div class="cardy p-3 h-100"><div class="fw-bold mb-2">Activity Mix</div><div class="chart-box tall"><canvas id="cActivity"></canvas></div></div></div>
+  </div>
+
+  <!-- ✅ WORKSHEET SUBMISSIONS TABLE -->
+  <div class="ws-table-card mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h4 class="fw-bold mb-0">Worksheet Submissions & Reviews</h4>
+      <div class="small-muted">One row per week in the current 4-week cycle</div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-bordered align-middle">
+        <thead>
+          <tr>
+            <th style="width:90px;">Week</th>
+            <th style="width:120px;">Unlocked</th>
+            <th style="width:120px;">Submitted</th>
+            <th>Submitted At</th>
+            <th style="width:120px;">Score</th>
+            <th>Comment</th>
+            <th style="width:150px;">Reviewed At</th>
+            <th style="width:210px;">Action</th>
+          </tr>
+        </thead>
+        <tbody id="wsTableBody">
+          <tr><td colspan="8" class="text-center text-secondary">No data yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===== View Modal (read-only submission detail) ===== -->
+<div class="modal fade" id="viewModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">
+          Submission <span id="vmSubId">—</span> • Week <span id="vmWeek">—</span>
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="vmMeta" class="small-muted mb-2"></div>
+        <div id="vmBody"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Review Modal (grade + per-question comments) ===== -->
+<div class="modal fade" id="reviewModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <form id="reviewForm" class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">
+          Review Submission <span id="rmSubId">—</span> • Week <span id="rmWeek">—</span>
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-sm-3">
+            <label class="form-label">Final Score (0–100)</label>
+            <input type="number" min="0" max="100" step="1" class="form-control" id="rmScore" required>
+          </div>
+          <div class="col-sm-9">
+            <label class="form-label">Overall Comment</label>
+            <textarea class="form-control" id="rmComment" rows="2" placeholder="Short feedback"></textarea>
+          </div>
+        </div>
+
+        <hr class="my-3"/>
+
+        <div id="rmQuestions">
+          <!-- Filled with per-question feedback textareas if the submission provides question list -->
+        </div>
+
+        <div id="rmError" class="alert alert-warning d-none mt-2">Could not load submission detail for comments.</div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal" type="button">Cancel</button>
+        <button class="btn btn-primary" type="submit">
+          <i class="bi bi-check2-circle"></i> Save Review
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
+/* ==================== Helpers ==================== */
 const PALETTE = [
   'rgba(99,102,241,0.7)','rgba(16,185,129,0.7)','rgba(236,72,153,0.7)',
   'rgba(234,179,8,0.7)','rgba(59,130,246,0.7)','rgba(168,85,247,0.7)',
-  'rgba(239,68,68,0.7)','rgba(20,184,166,0.7)','rgba(245,158,11,0.7)'
+  'rgba(239,68,68,0.7)'
 ];
 const BORDER = PALETTE.map(c=>c.replace('0.7','1'));
 const pct = x => Math.round((x||0)*100);
@@ -234,10 +287,13 @@ const loadState  = document.getElementById('loadState');
 const inlineErr  = document.getElementById('inlineErr');
 const pageSubtitle = document.getElementById('pageSubtitle');
 const btnReload = document.getElementById('btnReload');
+const wsTableBody = document.getElementById('wsTableBody');
 
 function setLoading(on){ loadState.style.display = on ? 'inline-block' : 'none'; }
 function showErr(on){ inlineErr.style.display = on ? 'block' : 'none'; }
+const fmt = (x) => x==null || x==="" ? "—" : x;
 
+/* ==================== Charts ==================== */
 function renderAll(data){
   // KPIs
   document.getElementById('kQuizzes').textContent = data.kpis?.total_quizzes ?? '0';
@@ -246,19 +302,20 @@ function renderAll(data){
   document.getElementById('kXP').textContent      = data.kpis?.total_xp ?? '0';
 
   // Destroy old charts
-  Object.values(charts).forEach(ch => ch && ch.destroy());
+  Object.values(charts).forEach(ch => ch?.destroy?.());
 
   charts.attemptsAcc = new Chart(document.getElementById('cAttemptsAcc'), {
     type: 'bar',
     data: {
       labels: data.timeseries.labels,
       datasets: [
-        { type:'bar',  label:'Attempts', data: data.timeseries.attempts, backgroundColor: PALETTE[0], yAxisID:'y' },
+        { type:'bar', label:'Attempts', data: data.timeseries.attempts, backgroundColor: PALETTE[0], yAxisID:'y' },
         { type:'line', label:'Accuracy %', data: data.timeseries.accuracy.map(p=>pct(p)), borderColor: BORDER[2], backgroundColor: PALETTE[2], tension:.28, yAxisID:'y1', fill:false }
       ]
     },
-    options: { responsive:true, maintainAspectRatio:false,
-      scales:{ y:{beginAtZero:true,ticks:{precision:0}}, y1:{position:'right',beginAtZero:true,max:100,ticks:{callback:v=>v+'%'}} },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      scales:{ y:{beginAtZero:true}, y1:{position:'right',beginAtZero:true,max:100} },
       plugins:{ legend:{ position:'bottom' } }
     }
   });
@@ -266,7 +323,7 @@ function renderAll(data){
   charts.accByLevel = new Chart(document.getElementById('cAccByLevel'), {
     type: 'bar',
     data: { labels: data.acc_by_level.labels, datasets: [{ label:'Accuracy %', data: data.acc_by_level.values.map(p=>pct(p)), backgroundColor: PALETTE }]},
-    options: { responsive:true, maintainAspectRatio:false, scales:{ y:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%'}} } }
+    options: { responsive:true, maintainAspectRatio:false, scales:{ y:{beginAtZero:true,max:100} } }
   });
 
   charts.worksheets = new Chart(document.getElementById('cWorksheets'), {
@@ -278,49 +335,87 @@ function renderAll(data){
         { label:'Submitted', data: data.worksheets.submitted, backgroundColor: PALETTE[6] }
       ]
     },
-    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'bottom'} }, scales:{ y:{beginAtZero:true,ticks:{precision:0}} } }
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'bottom'} }, scales:{ y:{beginAtZero:true} } }
   });
 
   charts.stories = new Chart(document.getElementById('cStories'), {
     type: 'line',
     data: { labels: data.stories.labels, datasets: [{ label:'Stories', data: data.stories.counts, borderColor: BORDER[1], backgroundColor: PALETTE[1], tension:.28, fill:true }]},
-    options: { responsive:true, maintainAspectRatio:false, scales:{ y:{beginAtZero:true,ticks:{precision:0}} } }
+    options: { responsive:true, maintainAspectRatio:false, scales:{ y:{beginAtZero:true} } }
   });
 
   charts.xp = new Chart(document.getElementById('cXP'), {
     type: 'line',
     data: { labels: data.xp.labels, datasets: [{ label:'Cumulative XP', data: data.xp.values, borderColor: BORDER[5], backgroundColor: PALETTE[5], tension:.28, fill:true }]},
-    options: { responsive:true, maintainAspectRatio:false, scales:{ y:{beginAtZero:true,ticks:{precision:0}} } }
+    options: { responsive:true, maintainAspectRatio:false, scales:{ y:{beginAtZero:true} } }
   });
 
   charts.activity = new Chart(document.getElementById('cActivity'), {
     type: 'doughnut',
     data: {
-      labels: ['Quiz Attempts','Stories Read','New Vocab'],
-      datasets: [{ data: [data.kpis.total_attempts, data.kpis.stories_read, data.kpis.vocab_new], backgroundColor:[PALETTE[0],PALETTE[1],PALETTE[2]] }]
+      labels: ['Quizzes','Stories','Vocab'],
+      datasets: [{ data: [data.kpis.total_attempts || 0, data.kpis.stories_read || 0, data.kpis.vocab_new || 0], backgroundColor:[PALETTE[0],PALETTE[1],PALETTE[2]] }]
     },
     options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'bottom'} }, cutout:'55%' }
   });
+
+  renderWorksheetTable(data.worksheet_details || []);
 }
 
-function mockPayload(){
-  const labels14 = Array.from({length:14},(_,i)=>`D${i+1}`);
-  return {
-    kpis:{ total_quizzes:0, overall_accuracy:0, stories_read:0, total_xp:0, total_attempts:0, vocab_new:0 },
-    timeseries:{ labels:labels14, attempts:Array(14).fill(0), accuracy:Array(14).fill(0) },
-    acc_by_level:{ labels:["A1","A2","B1","B2"], values:[0,0,0,0] },
-    worksheets:{ labels:["W1","W2","W3","W4"], unlocked:[0,0,0,0], submitted:[0,0,0,0] },
-    stories:{ labels:labels14, counts:Array(14).fill(0) },
-    xp:{ labels:labels14, values:Array(14).fill(0) }
-  };
+/* ==================== Worksheet Table ==================== */
+function renderWorksheetTable(details){
+  wsTableBody.innerHTML = "";
+  if (!details.length){
+    wsTableBody.innerHTML = "<tr><td colspan='8' class='text-center text-secondary'>No worksheet found for this user.</td></tr>";
+    return;
+  }
+
+  for (const w of details){
+    const unlockedBadge = w.is_unlocked
+      ? `<span class='badge-unlocked px-2 py-1 d-inline-block'>Unlocked</span>`
+      : `<span class='badge-locked px-2 py-1 d-inline-block'>Locked</span>`;
+
+    const submittedBadge = w.submitted
+      ? `<span class='badge-done px-2 py-1 d-inline-block'>Submitted</span>`
+      : `<span class='badge-pending px-2 py-1 d-inline-block'>Pending</span>`;
+
+    const score = w.review?.score ?? "—";
+    const comment = fmt(w.review?.comment);
+    const reviewedAt = fmt(w.review?.reviewed_at);
+
+    // Actions
+    const disabled = (!w.submitted || !w.submission_id) ? "disabled" : "";
+    const row = `
+      <tr data-week="${w.week}" data-subid="${w.submission_id || ""}">
+        <td>Week ${w.week}</td>
+        <td>${unlockedBadge}</td>
+        <td>${submittedBadge}</td>
+        <td>${fmt(w.submitted_at)}</td>
+        <td>${score}</td>
+        <td>${comment}</td>
+        <td>${reviewedAt}</td>
+        <td>
+          <div class="btn-group" role="group">
+            <button class="btn btn-sm btn-outline-secondary btn-view" ${disabled}>
+              <i class="bi bi-eye"></i> View
+            </button>
+            <button class="btn btn-sm btn-primary btn-review" ${disabled}>
+              <i class="bi bi-pencil-square"></i> Review
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+    wsTableBody.insertAdjacentHTML("beforeend", row);
+  }
+
+  // Wire up buttons
+  wsTableBody.querySelectorAll(".btn-view").forEach(b => b.addEventListener("click", onClickView));
+  wsTableBody.querySelectorAll(".btn-review").forEach(b => b.addEventListener("click", onClickReview));
 }
 
-// debounce
-let debounceTimer = null;
-function scheduleLoad(){ clearTimeout(debounceTimer); debounceTimer = setTimeout(loadUser, 120); }
-
+/* ==================== Data Loading ==================== */
 async function loadUser(){
-  if (!userSelect || userSelect.options.length === 0 || userSelect.disabled) return;
   const u = (userSelect.value || "").trim();
   if (!u) return;
 
@@ -339,19 +434,237 @@ async function loadUser(){
   }
 }
 
-window.addEventListener('DOMContentLoaded', () => {
-  if (!userSelect || userSelect.options.length === 0 || userSelect.disabled) {
-    // Empty state: render mock charts and show hint
-    renderAll(mockPayload());
-    pageSubtitle.textContent = 'No users yet. Create a user or add data to see analytics.';
-    setLoading(false);
-    return;
+/* ==================== View Modal Logic ==================== */
+/* Expected JSON from /admin/submission/<id>/json (suggested):
+{
+  "submission_id": 123,
+  "week": 2,
+  "username": "alice",
+  "submitted_at": "2025-11-10 13:22",
+  "sections": [
+    {"type":"reading","text":"..."},
+    {"type":"mcq","items":[{"prompt":"...","chosen":1,"options":["A","B","C","D"],"correct_index":0}]},
+    {"type":"short","items":[{"prompt":"...","answer":"cat"}]},
+    {"type":"writing","items":[{"prompt":"...","text":"..."}]}
+  ]
+}
+*/
+async function onClickView(e){
+  const tr = e.target.closest("tr");
+  const submission_id = tr?.dataset?.subid;
+  const week = tr?.dataset?.week || "—";
+  if (!submission_id) return;
+
+  // Fill header
+  document.getElementById("vmSubId").textContent = submission_id;
+  document.getElementById("vmWeek").textContent = week;
+  const vmBody = document.getElementById("vmBody");
+  const vmMeta = document.getElementById("vmMeta");
+  vmBody.innerHTML = "<div class='text-secondary'>Loading…</div>";
+  vmMeta.textContent = "";
+
+  try{
+    const r = await fetch(`/admin/submission/${encodeURIComponent(submission_id)}/json`);
+    if(!r.ok) throw new Error();
+    const data = await r.json();
+
+    vmMeta.textContent = `Student: ${data.username} • Submitted: ${fmt(data.submitted_at)}`;
+
+    const out = [];
+    for (const sec of (data.sections||[])){
+      if (sec.type === "reading") {
+        out.push(`<div class="qcard mb-2"><div class="qhead">Reading</div><div class="qans small-muted">${sec.text || ""}</div></div>`);
+      } else if (sec.type === "mcq") {
+        for (const [i,it] of (sec.items||[]).entries()){
+          const opts = (it.options||[]).map((o,idx)=>{
+            const picked = (idx === it.chosen) ? " • chosen" : "";
+            const isC = (idx === it.correct_index) ? " • correct" : "";
+            return `<div> - ${o}${picked}${isC}</div>`;
+          }).join("");
+          out.push(`<div class="qcard mb-2">
+            <div class="qhead">MCQ ${i+1}</div>
+            <div class="qans">${it.prompt || ""}</div>
+            <div class="qfbk small-muted mt-1">${opts}</div>
+          </div>`);
+        }
+      } else if (sec.type === "short") {
+        for (const [i,it] of (sec.items||[]).entries()){
+          out.push(`<div class="qcard mb-2">
+            <div class="qhead">Short ${i+1}</div>
+            <div class="qans"><div class="mb-1">${it.prompt || ""}</div><b>Answer:</b> ${fmt(it.answer)}</div>
+          </div>`);
+        }
+      } else if (sec.type === "writing") {
+        for (const [i,it] of (sec.items||[]).entries()){
+          const tags = (it.required_words||[]).map(w=>`<span class="badge bg-light text-dark border me-1">${w}</span>`).join("");
+          out.push(`<div class="qcard mb-2">
+            <div class="qhead">Writing ${i+1}</div>
+            <div class="qans mb-1">${it.prompt || ""}</div>
+            ${tags ? `<div class="mb-1">${tags}</div>` : ""}
+            <div class="qans"><b>Student:</b> ${fmt(it.text)}</div>
+          </div>`);
+        }
+      }
+    }
+    vmBody.innerHTML = out.join("") || "<div class='text-secondary'>No content.</div>";
+
+  }catch(err){
+    vmBody.innerHTML = "<div class='alert alert-warning'>Could not load submission detail. Ensure the JSON endpoint exists.</div>";
   }
-  loadUser();
+
+  new bootstrap.Modal(document.getElementById('viewModal')).show();
+}
+
+/* ==================== Review Modal Logic ==================== */
+/* We try to load the same JSON as View to build per-question comment boxes.
+   Post destination default: /admin/review/<submission_id>
+   You can change it in buildReviewURL().
+*/
+function buildReviewURL(submission_id){
+  // Change here if your route is different (e.g., /admin_save_review?submission_id=)
+  return `/admin/worksheets/review/${encodeURIComponent(submission_id)}`;
+}
+
+async function onClickReview(e){
+  const tr = e.target.closest("tr");
+  const submission_id = tr?.dataset?.subid;
+  const week = tr?.dataset?.week || "—";
+  if (!submission_id) return;
+
+  // Fill header + clear fields
+  document.getElementById("rmSubId").textContent = submission_id;
+  document.getElementById("rmWeek").textContent = week;
+  document.getElementById("rmScore").value = "";
+  document.getElementById("rmComment").value = "";
+  const rmQuestions = document.getElementById("rmQuestions");
+  rmQuestions.innerHTML = "<div class='text-secondary'>Loading questions…</div>";
+  document.getElementById("rmError").classList.add("d-none");
+
+  // Try to preload questions for per-item comments (optional)
+  try{
+    const r = await fetch(`/admin/submission/${encodeURIComponent(submission_id)}/json`);
+    if(!r.ok) throw new Error();
+    const data = await r.json();
+
+    const blocks = [];
+    let qcount = 0;
+
+    for (const sec of (data.sections||[])){
+      if (sec.type === "mcq") {
+        for (const it of (sec.items||[])){
+          qcount++;
+          blocks.push(`
+            <div class="qcard mb-2">
+              <div class="qhead">Q${qcount} (MCQ)</div>
+              <div class="qans small">${it.prompt || ""}</div>
+              <label class="form-label mt-2">Comment (optional)</label>
+              <textarea class="form-control" name="fbk_${qcount}" rows="1" placeholder="Comment for this question"></textarea>
+            </div>
+          `);
+        }
+      } else if (sec.type === "short") {
+        for (const it of (sec.items||[])){
+          qcount++;
+          blocks.push(`
+            <div class="qcard mb-2">
+              <div class="qhead">Q${qcount} (Short)</div>
+              <div class="qans small">${it.prompt || ""}</div>
+              <label class="form-label mt-2">Comment (optional)</label>
+              <textarea class="form-control" name="fbk_${qcount}" rows="1" placeholder="Comment for this answer"></textarea>
+            </div>
+          `);
+        }
+      } else if (sec.type === "writing") {
+        for (const it of (sec.items||[])){
+          qcount++;
+          blocks.push(`
+            <div class="qcard mb-2">
+              <div class="qhead">Q${qcount} (Writing)</div>
+              <div class="qans small">${it.prompt || ""}</div>
+              <label class="form-label mt-2">Comment (optional)</label>
+              <textarea class="form-control" name="fbk_${qcount}" rows="1" placeholder="Comment for this writing"></textarea>
+            </div>
+          `);
+        }
+      }
+    }
+
+    rmQuestions.innerHTML = blocks.join("") || "<div class='text-secondary'>No questions found for comments.</div>";
+    document.getElementById("reviewForm").dataset.qcount = qcount.toString();
+
+  }catch(err){
+    // Not fatal — admin can still give overall score/comment
+    rmQuestions.innerHTML = "";
+    document.getElementById("rmError").classList.remove("d-none");
+    document.getElementById("reviewForm").dataset.qcount = "0";
+  }
+
+  new bootstrap.Modal(document.getElementById('reviewModal')).show();
+}
+
+/* Handle review POST */
+document.getElementById("reviewForm").addEventListener("submit", async (e)=>{
+  e.preventDefault();
+  const subId = document.getElementById("rmSubId").textContent.trim();
+  const score = parseInt(document.getElementById("rmScore").value || "0", 10);
+  const comment = document.getElementById("rmComment").value || "";
+  const qcount = parseInt(e.currentTarget.dataset.qcount || "0", 10);
+
+  // Collect per-item feedback (optional)
+  const perItem = [];
+  for (let i=1;i<=qcount;i++){
+    const t = e.currentTarget.querySelector(`[name="fbk_${i}"]`);
+    if (t && t.value.trim()!==""){
+      perItem.push({ index:i, comment: t.value.trim() });
+    }
+  }
+
+const payload = {
+  score,
+  comment,
+  items: perItem.map(({ index, comment }) => ({
+    key: `Q${index}`,    // any stable key; Q1, Q2, ...
+    points: null,        // or a number if you have it
+    comment: comment
+  }))
+};
+
+  try{
+    const r = await fetch(buildReviewURL(subId), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+  }catch(err){
+    // Fallback: try typical form-encoded to a legacy endpoint if needed
+    try{
+      const formData = new FormData();
+      formData.append("score", String(score));
+      formData.append("comment", comment);
+      formData.append("per_item_feedback_json", JSON.stringify(perItem));
+      const legacy = await fetch(`/admin_save_review?submission_id=${encodeURIComponent(subId)}`, {
+        method: "POST",
+        body: formData
+      });
+      if(!legacy.ok) throw new Error(`Legacy HTTP ${legacy.status}`);
+    }catch(e2){
+      alert("Could not save review. Please ensure the review route exists.");
+      return;
+    }
+  }
+
+  // Close modal & refresh
+  bootstrap.Modal.getInstance(document.getElementById('reviewModal'))?.hide();
+  await loadUser();
 });
 
-userSelect?.addEventListener('change', scheduleLoad);
-btnReload?.addEventListener('click', scheduleLoad);
+/* ==================== Init ==================== */
+window.addEventListener("DOMContentLoaded", () => {
+  if (userSelect && userSelect.value) loadUser();
+});
+userSelect?.addEventListener("change", loadUser);
+btnReload?.addEventListener("click", loadUser);
 </script>
 </body>
 </html>

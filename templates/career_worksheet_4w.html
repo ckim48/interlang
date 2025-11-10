@@ -1,4 +1,3 @@
-<!-- templates/career_worksheet_4w.html -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -6,30 +5,16 @@
 <title>{{ job|title }} • Week {{ week }}</title>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 
-<!-- Fonts & Bootstrap -->
-
 <style>
   :root{
-    /* Playful pastel palette (same as achievements) */
-    --ink:#2a2a2a;
-    --muted:#6e7494;
-    --bg:#ffffff;
-    --bg-wash-1:#fff7f1;  /* peach */
-    --bg-wash-2:#f0f7ff;  /* sky */
-    --bg-wash-3:#f7fff6;  /* mint */
-    --paper:#fffdf5;
-    --paper-br:#f2eede;
-    --brand:#ff8db3;    /* strawberry */
-    --brand-2:#7acbff;  /* sky */
-    --brand-3:#7ee0a8;  /* mint */
-    --brand-4:#ffd86b;  /* sunshine */
-    --ring:#ffdca8;
-    --ok:#16a34a;
+    --ink:#2a2a2a; --muted:#6e7494; --bg:#ffffff;
+    --bg-wash-1:#fff7f1; --bg-wash-2:#f0f7ff; --bg-wash-3:#f7fff6;
+    --paper:#fffdf5; --paper-br:#f2eede;
+    --brand:#ff8db3; --brand-2:#7acbff; --brand-3:#7ee0a8; --brand-4:#ffd86b;
+    --ring:#ffdca8; --ok:#16a34a;
   }
-
-  /* Background */
   body{
-      font-family: Nunito, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    font-family: Nunito, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
     color:var(--ink);
     background:
       radial-gradient(60vmax 40vmax at 8% 0%, var(--bg-wash-2) 0%, transparent 65%),
@@ -39,11 +24,7 @@
     background-attachment: fixed;
     padding-bottom: 30px;
   }
-
-  /* Match navbar style (uses your nav.html, just spacing here) */
   .page-wrap{ max-width: 980px; margin: 20px auto 0; }
-
-  /* Header block similar to achievements header */
   .page-header{
     background: linear-gradient(180deg,#ffffff,#fbfcff);
     border:1px solid #f0f2fb; border-radius:22px; padding:18px;
@@ -54,88 +35,66 @@
     background:linear-gradient(90deg,transparent,#ffdca8,#9fe0ff,transparent);
     border-radius:2px; opacity:.9;
   }
-  .crumb{ color:var(--muted); font-size:.95rem; }
-  .title{
-    font-family:Fredoka; font-weight:900; letter-spacing:.2px; color:#1f2b46;
-    margin:0;
-  }
+  .crumb{ color:#6e7494; font-size:.95rem; }
+  .title{ font-family:Fredoka; font-weight:900; letter-spacing:.2px; color:#1f2b46; margin:0; }
 
-  /* Cards */
   .card-glass{
     border:1px solid #f0f2fb;
     background: linear-gradient(180deg,#ffffff,#fbfcff);
     border-radius:20px; box-shadow:0 12px 32px rgba(52,90,160,.10);
   }
   .section-title{
-    font-family:Fredoka;
-    font-weight:800; font-size:1.1rem; margin-bottom:.5rem; color:#1f2b46;
+    font-family:Fredoka; font-weight:800; font-size:1.1rem; margin-bottom:.5rem; color:#1f2b46;
   }
-  .small-note{ font-size:.9rem; color:var(--muted); }
+  .small-note{ font-size:.9rem; color:#6e7494; }
 
-  /* Table */
   table.vocab td, table.vocab th{ vertical-align: top; }
 
-  /* Badges */
   .badge-soft{
     background:linear-gradient(180deg,#fff8e6,#fff3cc);
     border:1px solid #ffe3a3; color:#5e4300; border-radius:999px;
     padding:.2rem .6rem; font-weight:800;
   }
 
-  /* Fun buttons (same set used across pages) */
-  .btn-fun{
-    border-radius:14px;
-    border:1px solid #ffdca8;
-    background: linear-gradient(180deg,#fff6e7,#ffe8b3);
-    color:#8a5600;
-    font-weight:800;
-    padding:.55rem 1.1rem;
-    display:inline-flex; align-items:center; gap:.4rem;
-    min-height:42px;
-  }
-  .btn-fun:hover{ background: linear-gradient(180deg,#fff1d1,#ffdf99); color:#7a4e00; }
-  .btn-fun:disabled, .btn-fun.disabled{ opacity:.6; pointer-events:none; }
-
-  .btn-fun-outline{
-    border-radius:14px;
-    border:1px dashed #ffdca8;
-    background:#fff;
-    color:#8a5600;
-    font-weight:800;
-    padding:.55rem 1.1rem;
-    display:inline-flex; align-items:center; gap:.4rem;
-    min-height:42px;
-  }
-  .btn-fun-outline:hover{ background:#fffaf1; border-style:solid; }
-  .btn-fun-outline[aria-disabled="true"]{ opacity:.6; pointer-events:none; }
-
-  /* Top action bar (All Weeks / Prev / Next) */
-  .action-bar{ display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
-  .action-bar .btn-fun, .action-bar .btn-fun-outline{
-    padding:8px 16px; min-height:42px;
-    text-decoration:none;
-  }
-
-  /* Form elements */
+  /* Inputs */
   .form-control{
     background:#fff !important; border:1px solid #e6ecff !important;
     border-radius:14px; padding:.65rem .9rem; font-weight:600;
     box-shadow:0 3px 0 rgba(0,0,0,0.02) inset;
   }
-  .form-control:focus{
-    border-color:#cfe2ff !important; box-shadow:0 0 0 .2rem #cfe2ff66 !important;
+
+  /* Review */
+  .review-banner{
+    border:1px solid #d7f3df;
+    background:linear-gradient(180deg,#f4fff6,#e8fff0);
+    border-radius:18px; padding:14px 16px;
   }
-  .form-check-input{
-    border-radius:.5rem; border:1px solid #e6ecff;
+  .fbk{
+    margin-top:.35rem; font-size:.92rem; color:#0f5132;
+    background:#ecfff3; border:1px solid #c9f2d9; border-radius:12px; padding:.45rem .6rem;
   }
-  .form-check-input:focus{ box-shadow:0 0 0 .2rem #cfe2ff66 !important; }
-  .form-check-input:checked{
-    background:linear-gradient(180deg,#fff6e7,#ffe8b3);
-    border-color:#ffdca8;
+  .no-fbk{
+    margin-top:.35rem; font-size:.9rem; color:#6e7494;
+    background:#fafbff; border:1px dashed #e2e7ff; border-radius:12px; padding:.35rem .55rem;
   }
 
-  /* Bottom bar */
-  .bottom-bar{ display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
+  /* Buttons */
+  .btn-fun{
+    border-radius:14px; border:1px solid #ffdca8;
+    background: linear-gradient(180deg,#fff6e7,#ffe8b3);
+    color:#8a5600; font-weight:800; padding:.55rem 1.1rem;
+    cursor:pointer;
+    text-decoration:none;
+    display:inline-flex; align-items:center; gap:.4rem; min-height:42px;
+  }
+  .btn-fun-outline{
+    border-radius:14px; border:1px dashed #ffdca8;
+    background:#fff; color:#8a5600;
+    text-decoration:none;
+    font-weight:800; padding:.55rem 1.1rem;
+    display:inline-flex; align-items:center; gap:.4rem; min-height:42px;
+  }
+
 </style>
 </head>
 <body>
@@ -147,7 +106,7 @@
   {% set prev_week = 1 if week <= 1 else week - 1 %}
   {% set next_week = 4 if week >= 4 else week + 1 %}
 
-  <!-- Header -->
+  <!-- HEADER -->
   <div class="page-header mb-3">
     <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
       <div>
@@ -158,90 +117,93 @@
         <div class="text-secondary small">Level {{ level }} • Created {{ created_at }}</div>
       </div>
 
-      <!-- Actions -->
-      <div class="action-bar">
-        <a class="btn-fun-outline" href="{{ url_for('career_overview', ws_id=ws_id) }}">
-          <i class="bi bi-grid"></i> All Weeks
-        </a>
-
-        {% if week <= 1 %}
-          <a class="btn-fun" aria-disabled="true" tabindex="-1">
-            ← Prev
-          </a>
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        <a class="btn-fun-outline" href="{{ url_for('career_overview', ws_id=ws_id) }}"><i class="bi bi-grid"></i> All Weeks</a>
+        {% if week > 1 %}
+          <a class="btn-fun" href="{{ url_for('career_view', ws_id=ws_id, week=prev_week) }}">← Prev</a>
         {% else %}
-          <a class="btn-fun" href="{{ url_for('career_view', ws_id=ws_id, week=prev_week) }}">
-            ← Prev
-          </a>
+          <a class="btn-fun" aria-disabled="true" tabindex="-1">← Prev</a>
         {% endif %}
-
-        {% if week >= 4 %}
-          <a class="btn-fun" aria-disabled="true" tabindex="-1">
-            Next →
-          </a>
+        {% if week < 4 %}
+          <a class="btn-fun" href="{{ url_for('career_view', ws_id=ws_id, week=next_week) }}">Next →</a>
         {% else %}
-          <a class="btn-fun" href="{{ url_for('career_view', ws_id=ws_id, week=next_week) }}">
-            Next →
-          </a>
+          <a class="btn-fun" aria-disabled="true" tabindex="-1">Next →</a>
         {% endif %}
       </div>
     </div>
   </div>
 
-  <!-- Flash messages -->
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-      <div class="mb-3">
-        {% for cat, msg in messages %}
-          <div class="alert alert-{{cat}} mb-2" role="alert">{{ msg }}</div>
-        {% endfor %}
+  <!-- REVIEW BANNER -->
+  {% if is_reviewed %}
+  <div class="review-banner mb-3">
+    <div class="d-flex justify-content-between flex-wrap gap-2">
+      <div>
+        <div class="fw-bold">Reviewed</div>
+        <div class="small text-secondary">Reviewed at: {{ review.reviewed_at or "—" }}</div>
       </div>
+      <div class="text-end">
+        <div class="fw-bold">Score</div>
+        <div class="fs-5">{{ review.score }}</div>
+      </div>
+    </div>
+
+    {% if review.comment %}
+      <div class="mt-2"><strong>Overall Comment:</strong> {{ review.comment }}</div>
     {% endif %}
-  {% endwith %}
-
-  <!-- Reading -->
-  <div class="card-glass p-4 mb-4">
-    <div class="section-title">Reading</div>
-    <p class="mb-0">{{ reading }}</p>
-    <div class="small-note mt-2">Tip: Underline new words. Read twice.</div>
-  </div>
-
-  <!-- Vocabulary -->
-  {% if vocab %}
-  <div class="card-glass p-4 mb-4">
-    <div class="section-title">A. Vocabulary (read + copy)</div>
-    <div class="table-responsive">
-      <table class="table table-sm vocab mb-0">
-        <thead>
-          <tr>
-            <th style="width:18%">Word</th>
-            <th style="width:22%">Meaning (KO)</th>
-            <th>Example</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for v in vocab %}
-          <tr>
-            <td class="fw-semibold">{{ v.word }}</td>
-            <td>{{ v.meaning_ko }}</td>
-            <td>{{ v.example_en }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
   </div>
   {% endif %}
 
-  <form method="post" action="{{ url_for('career_submit', ws_id=ws_id) }}?week={{ week }}">
+  <!-- READING -->
+  <div class="card-glass p-4 mb-4">
+    <div class="section-title">Reading</div>
+    <p>{{ reading }}</p>
+  </div>
 
-    <!-- Comprehension -->
+  <!-- VOCAB -->
+  {% if vocab %}
+  <div class="card-glass p-4 mb-4">
+    <div class="section-title">A. Vocabulary</div>
+    <table class="table table-sm vocab mb-0">
+      <tbody>
+        {% for v in vocab %}
+        <tr>
+          <td class="fw-semibold">{{ v.word }}</td>
+          <td>{{ v.meaning_ko }}</td>
+          <td>{{ v.example_en }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% set qindex = 0 %}
+  <form method="post" action="{{ url_for('career_submit', ws_id=ws_id, week=week) }}">
+
+    <!-- COMPREHENSION -->
     {% if comprehension %}
     <div class="card-glass p-4 mb-4">
-      <div class="section-title">B. Comprehension (short answers)</div>
+      <div class="section-title">B. Comprehension</div>
       {% for c in comprehension %}
+        {% set qindex = qindex + 1 %}
+        {% set key = 'Q' ~ qindex %}
+        {% set name = 'comp_' ~ loop.index0 %}
         <div class="mb-3">
-          <div class="mb-1">{{ loop.index }}. {{ c.q }}</div>
-          <input class="form-control" name="comp_{{ loop.index0 }}" placeholder="Answer in a few words">
+          <div>{{ loop.index }}. {{ c.q }}</div>
+
+          {% if is_reviewed %}
+            <div class="form-control disabled">{{ prefill[name] }}</div>
+          {% else %}
+            <input class="form-control" name="{{ name }}" value="{{ prefill[name] or '' }}">
+          {% endif %}
+
+          {% if is_reviewed %}
+            {% if fbk_map[key] %}
+              <div class="fbk"><strong>Feedback:</strong> {{ fbk_map[key] }}</div>
+            {% else %}
+              <div class="no-fbk">No comment</div>
+            {% endif %}
+          {% endif %}
         </div>
       {% endfor %}
     </div>
@@ -250,46 +212,82 @@
     <!-- MCQ -->
     {% if mcq %}
     <div class="card-glass p-4 mb-4">
-      <div class="section-title">C. Multiple Choice (pick one)</div>
+      <div class="section-title">C. Multiple Choice</div>
       {% for item in mcq %}
+        {% set qindex = qindex + 1 %}
+        {% set key = 'Q' ~ qindex %}
         {% set qname = 'mcq_' ~ loop.index0 %}
         <div class="mb-3">
-          <div class="mb-1">{{ loop.index }}. {{ item.prompt|safe }}</div>
-          <div>
-            {% for opt in item.options %}
-              <div class="form-check mb-1">
-                <input class="form-check-input" type="radio"
-                       name="{{ qname }}" id="{{ qname }}_{{ loop.index0 }}"
-                       value="{{ loop.index0 }}">
-                <label class="form-check-label" for="{{ qname }}_{{ loop.index0 }}">{{ opt }}</label>
-              </div>
-            {% endfor %}
-          </div>
+          <div>{{ loop.index }}. {{ item.prompt|safe }}</div>
+
+          {% set chosen = prefill[qname] %}
+
+          {% for opt in item.options %}
+            {% set oid = qname ~ '_' ~ loop.index0 %}
+            <div class="form-check">
+              <input class="form-check-input"
+                     type="radio"
+                     name="{{ qname }}"
+                     id="{{ oid }}"
+                     value="{{ loop.index0 }}"
+                     {% if chosen|string == loop.index0|string %}checked{% endif %}
+                     {% if is_reviewed %}disabled{% endif %}>
+              <label class="form-check-label" for="{{ oid }}">{{ opt }}</label>
+            </div>
+          {% endfor %}
+
+          {% if is_reviewed %}
+            {% if fbk_map[key] %}
+              <div class="fbk"><strong>Feedback:</strong> {{ fbk_map[key] }}</div>
+            {% else %}
+              <div class="no-fbk">No comment</div>
+            {% endif %}
+          {% endif %}
         </div>
       {% endfor %}
     </div>
     {% endif %}
 
-    <!-- Short blanks -->
+    <!-- SHORT BLANKS -->
     {% if short %}
     <div class="card-glass p-4 mb-4">
-      <div class="section-title">D. Short Blanks (one word)</div>
+      <div class="section-title">D. Short Blanks</div>
       {% for item in short %}
+        {% set qindex = qindex + 1 %}
+        {% set key = 'Q' ~ qindex %}
+        {% set name = 'short_' ~ loop.index0 %}
         <div class="mb-3">
-          <div class="mb-1">{{ loop.index }}. {{ item.prompt|safe }}</div>
-          <input class="form-control" name="short_{{ loop.index0 }}" placeholder="Type one word">
+          <div>{{ loop.index }}. {{ item.prompt|safe }}</div>
+
+          {% if is_reviewed %}
+            <div class="form-control disabled">{{ prefill[name] }}</div>
+          {% else %}
+            <input class="form-control" name="{{ name }}" value="{{ prefill[name] or '' }}">
+          {% endif %}
+
+          {% if is_reviewed %}
+            {% if fbk_map[key] %}
+              <div class="fbk"><strong>Feedback:</strong> {{ fbk_map[key] }}</div>
+            {% else %}
+              <div class="no-fbk">No comment</div>
+            {% endif %}
+          {% endif %}
         </div>
       {% endfor %}
     </div>
     {% endif %}
 
-    <!-- Writing -->
+    <!-- WRITING -->
     {% if writing %}
     <div class="card-glass p-4 mb-4">
-      <div class="section-title">E. Writing (2 prompts)</div>
+      <div class="section-title">E. Writing</div>
       {% for w in writing %}
+        {% set qindex = qindex + 1 %}
+        {% set key = 'Q' ~ qindex %}
+        {% set name = 'long_' ~ loop.index0 %}
         <div class="mb-3">
-          <div class="fw-semibold mb-1">{{ loop.index }}. {{ w.prompt }}</div>
+          <div class="fw-semibold">{{ loop.index }}. {{ w.prompt }}</div>
+
           {% if w.required_words %}
             <div class="mb-2">
               {% for rw in w.required_words %}
@@ -297,22 +295,38 @@
               {% endfor %}
             </div>
           {% endif %}
-          <textarea name="long_{{ loop.index0 }}" class="form-control" placeholder="Write one clear sentence using the words above." style="min-height:110px;"></textarea>
+
+          {% if is_reviewed %}
+            <textarea class="form-control disabled" disabled>{{ prefill[name] }}</textarea>
+          {% else %}
+            <textarea class="form-control" name="{{ name }}">{{ prefill[name] or '' }}</textarea>
+          {% endif %}
+
+          {% if is_reviewed %}
+            {% if fbk_map[key] %}
+              <div class="fbk"><strong>Feedback:</strong> {{ fbk_map[key] }}</div>
+            {% else %}
+              <div class="no-fbk">No comment</div>
+            {% endif %}
+          {% endif %}
         </div>
       {% endfor %}
-      <div class="small-note">Tip: Check capital letters and full stop.</div>
     </div>
     {% endif %}
 
-    <!-- Bottom actions -->
-    <div class="bottom-bar mt-2">
-      <button class="btn-fun" type="submit">
-        <i class="bi bi-check2-circle"></i> Submit Week {{ week }}
-      </button>
+    <!-- BUTTONS -->
+    <div class="d-flex gap-2 mt-2">
+
+      {% if not is_reviewed %}
+        <button class="btn-fun" type="submit">
+          <i class="bi bi-check2-circle"></i> Submit Week {{ week }}
+        </button>
+      {% endif %}
 
       <a class="btn-fun-outline" href="{{ url_for('career_overview', ws_id=ws_id) }}">
         <i class="bi bi-arrow-left"></i> Back
       </a>
+
     </div>
   </form>
 </div>

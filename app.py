@@ -14,7 +14,6 @@ from flask import (
     g, session, redirect, url_for, request, flash, jsonify
 )
 
-# ====== GPT client (optional; graceful fallback) ======
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 # ==== CareerQuest weekly unlock helpers ====
 from datetime import datetime, timedelta
@@ -665,16 +664,6 @@ def is_too_similar(prompt: str, recent_tok: list[tuple[str,set[str]]], thr: floa
             return True
     return False
 def gpt_generate_quiz(level: int) -> dict:
-    """
-    LLM-only generator that ALWAYS returns exactly 16 items (per distribution_for_level),
-    or raises RuntimeError. No local templating or padding — every item comes from GPT.
-
-    Updates:
-      • LONG: Prompt must explicitly list required_words, e.g.
-        "Write one short sentence using these words: cat, run, fast."
-      • SHORT: Must be truly single-answer. Answer is a single token (letters/digits only),
-        no synonyms, alternates must be [].
-    """
     import os, json, re
     from typing import Any, Dict, List
 
@@ -683,28 +672,36 @@ def gpt_generate_quiz(level: int) -> dict:
     MAX_FULL_ATTEMPTS  = 3
     MAX_PATCH_ATTEMPTS = 6
 
+    # -------- determine distribution (mcq, short, long) --------
     try:
         mcq_need, short_need, long_need = distribution_for_level(level)
     except Exception:
         mcq_need, short_need, long_need = (10, 4, 2)
-    total_need = int(mcq_need) + int(short_need) + int(long_need)
-    if total_need != 16:
-        raise RuntimeError(f"distribution_for_level({level}) must sum to 16, got {total_need}")
 
-    # ------- light guidance bank (never fabricate locally) -------
+    total_need = mcq_need + short_need + long_need
+    if total_need != 16:
+        raise RuntimeError(f"distribution must sum to 16, got {total_need}")
+
+    # -------- helper data --------
     DIFF_NAME = {1:"Beginner",2:"Novice",3:"Intermediate",4:"Advanced",5:"Expert"}
     def easy_bank():
         l1, l2 = WORD_POOLS.get(1, {}), WORD_POOLS.get(2, {})
         def pick(k): return list(dict.fromkeys((l1.get(k) or []) + (l2.get(k) or [])))
-        return {"nouns":pick("nouns"),"verbs":pick("verbs"),"adjectives":pick("adjectives"),
-                "adverbs":pick("adverbs"),"preps":pick("preps")}
+        return {
+            "nouns": pick("nouns"), "verbs": pick("verbs"), "adjectives": pick("adjectives"),
+            "adverbs": pick("adverbs"), "preps": pick("preps")
+        }
+
     BANK = easy_bank() if level >= 2 else WORD_POOLS.get(level, WORD_POOLS.get(1, {}))
     diff_name = DIFF_NAME.get(int(level), "Intermediate")
     max_sentence_len = 6 if level <= 3 else 8
 
-    # ------- small utils -------
-    def _is_str(x): return isinstance(x, str) and x.strip() != ""
     def _norm(s): return (s or "").strip().lower()
+    def _is_str(x): return isinstance(x, str) and x.strip() != ""
+
+    _single_token_re = re.compile(r"^[A-Za-z0-9]+$")
+
+    # -------- JSON extractor --------
     def extract_json(text: str) -> Any:
         try:
             return json.loads(text)
@@ -713,308 +710,286 @@ def gpt_generate_quiz(level: int) -> dict:
         m = re.search(r"\{(?:[^{}]|(?R))*\}", text or "", flags=re.S)
         if m:
             try: return json.loads(m.group(0))
-            except Exception: return {}
+            except Exception: pass
         return {}
 
-    # Single-token = letters/numbers only, no spaces/hyphens/slashes/commas.
-    _single_token_re = re.compile(r"^[A-Za-z0-9]+$")
-
+    # ============================================================
+    # VALIDATOR (accept alternates for SHORT; all single-token)
+    # ============================================================
     def validate_block(data: Dict) -> Dict[str, List[Dict]]:
-        """
-        Accept only well-formed items. No synthesis here.
-        LONG:
-          - required_words length 3..4
-          - prompt MUST explicitly list them in the text using phrase:
-            'using these words: w1, w2, w3' (case-insensitive for checking)
-        SHORT:
-          - answer must be a single token (letters/digits only)
-          - alternates forced to []
-        """
         out = {"mcq": [], "short": [], "long": []}
 
-        # MCQ
+        # ---- MCQ items ----
         for it in (data.get("mcq") or []):
             if not isinstance(it, dict): continue
-            p, opts, ai = it.get("prompt",""), it.get("options",[]), it.get("answer_index",None)
+            p, opts, ai = it.get("prompt",""), it.get("options",[]), it.get("answer_index")
             if not _is_str(p): continue
-            if not (isinstance(opts, list) and len(opts) == 4 and all(_is_str(o) for o in opts)): continue
-            if not (isinstance(ai, int) and 0 <= ai <= 3): continue
+            if not (isinstance(opts, list) and len(opts) == 4 and all(_is_str(o) for o in opts)):
+                continue
+            if not (isinstance(ai, int) and 0 <= ai < 4):
+                continue
             out["mcq"].append({
                 "prompt": p.strip(),
                 "options": [str(o).strip() for o in opts],
                 "answer_index": int(ai),
                 "explanation": (it.get("explanation") or "").strip(),
-                "hint": (it.get("hint") or "").strip()
+                "hint": (it.get("hint") or "").strip(),
             })
 
-        # SHORT (enforce single-token answer, no alternates)
+        # ---- SHORT items (single-token answer; allow alternates single-token) ---
         for it in (data.get("short") or []):
             if not isinstance(it, dict): continue
-            p, a = it.get("prompt",""), it.get("answer","")
-            if not (_is_str(p) and _is_str(a)): continue
-            a = a.strip()
-            if not _single_token_re.fullmatch(a):  # reject multi-word or punctuated answers
+            p = (it.get("prompt") or "").strip()
+            a = (it.get("answer") or "").strip()
+            alts_raw = it.get("alternates") or []
+
+            if not (_is_str(p) and _is_str(a)):
                 continue
+
+            # Encourage clarity to avoid ambiguity
+            p_low = p.lower()
+            if not any(kw in p_low for kw in ["one word", "single word", "one letter"]):
+                # still accept creative prompts but enforce single-token answers
+                pass
+
+            # main answer must be single-token
+            if not _single_token_re.fullmatch(a):
+                continue
+
+            # alternates: keep only single-token, dedupe, exclude main
+            alts: List[str] = []
+            if isinstance(alts_raw, list):
+                seen = set([_norm(a)])
+                for x in alts_raw:
+                    if not _is_str(x): continue
+                    x = x.strip()
+                    if not _single_token_re.fullmatch(x): continue
+                    nx = _norm(x)
+                    if nx in seen: continue
+                    seen.add(nx)
+                    alts.append(x)
+                    if len(alts) >= 3:  # cap to 3 alternates
+                        break
+
             out["short"].append({
-                "prompt": p.strip(),
+                "prompt": p,
                 "answer": a,
-                "alternates": [],  # force empty to keep one-and-only-one answer
+                "alternates": alts,
                 "explanation": (it.get("explanation") or "").strip(),
-                "hint": (it.get("hint") or "").strip()
+                "hint": (it.get("hint") or "").strip(),
             })
 
-        # LONG (explicit required words in prompt text)
+        # ---- LONG items ----
         for it in (data.get("long") or []):
             if not isinstance(it, dict): continue
-            req = (it.get("required_words",[]) or [])
-            if not (isinstance(req, list) and 3 <= len(req) <= 4 and all(_is_str(w) for w in req)): continue
-            req = [str(w).strip() for w in req[:4]]
+            req = (it.get("required_words") or [])
+            if not (3 <= len(req) <= 4 and all(_is_str(w) for w in req)):
+                continue
+            req = [w.strip() for w in req]
             p = (it.get("prompt") or "").strip()
 
-            # Prompt must explicitly show the list using a clear phrase
-            # e.g., "Write one short sentence using these words: w1, w2, w3."
-            ok_phrase = ("using these words:" in _norm(p))
-            has_all = all(_norm(w) in _norm(p) for w in req)
-            if not (_is_str(p) and ok_phrase and has_all):
-                # If LLM didn't follow, reject this item
+            # must contain “using these words: …” and include each required word
+            if "using these words:" not in _norm(p):
+                continue
+            if not all(_norm(w) in _norm(p) for w in req):
                 continue
 
             out["long"].append({
                 "prompt": p,
                 "required_words": req,
+                "hint": (it.get("hint") or "").strip(),
                 "explanation": (it.get("explanation") or "").strip(),
-                "hint": (it.get("hint") or "").strip()
             })
+
         return out
 
-    # ------- request payloads -------
-    # JSON schema (guidance for the model)
+    # ============================================================
+    # PAYLOADS FOR GPT
+    # ============================================================
     base_schema = {
-        "type":"object","required":["mcq","short","long"],
+        "type":"object",
+        "required":["mcq","short","long"],
         "properties":{
             "mcq":{"type":"array","items":{
-                "type":"object","required":["prompt","options","answer_index","explanation","hint"],
+                "type":"object","required":["prompt","options","answer_index"],
                 "properties":{
                     "prompt":{"type":"string"},
                     "options":{"type":"array","minItems":4,"maxItems":4,"items":{"type":"string"}},
                     "answer_index":{"type":"integer","minimum":0,"maximum":3},
                     "explanation":{"type":"string"},
-                    "hint":{"type":"string"}}}},
+                    "hint":{"type":"string"},
+                }
+            }},
             "short":{"type":"array","items":{
-                "type":"object","required":["prompt","answer","alternates","explanation","hint"],
+                "type":"object","required":["prompt","answer","alternates"],
                 "properties":{
                     "prompt":{"type":"string"},
                     "answer":{"type":"string"},
                     "alternates":{"type":"array","items":{"type":"string"}},
                     "explanation":{"type":"string"},
-                    "hint":{"type":"string"}}}},
+                    "hint":{"type":"string"},
+                }
+            }},
             "long":{"type":"array","items":{
                 "type":"object","required":["prompt","required_words","hint"],
                 "properties":{
                     "prompt":{"type":"string"},
                     "required_words":{"type":"array","minItems":3,"maxItems":4,"items":{"type":"string"}},
-                    "hint":{"type":"string"}}}}
+                    "hint":{"type":"string"},
+                    "explanation":{"type":"string"},
+                }
+            }},
         }
     }
 
     sys_msg = (
-        "You create quizzes for very young ESL learners (Pre-A1/A1). "
-        "Return a SINGLE JSON object with keys mcq/short/long. No prose, no markdown."
+        "You create quizzes for young ESL learners (Pre-A1/A1). "
+        "Return ONLY a single JSON object with keys mcq/short/long."
     )
 
-    # Shared audience rules
     audience_rules = {
-        "cefr": "Pre-A1/A1",
-        "avoid": ["passive voice","perfect tenses","conditionals","rare words","idioms"],
+        "cefr":"Pre-A1/A1",
         "sentence_word_limit": max_sentence_len,
-        "lowercase_single_words": True
+        "avoid":["passive voice","perfect tenses","rare words","idioms"],
     }
 
-    # SHORT: restrict to unambiguous templates that yield a single-token answer.
-    # The model MUST use one of these patterns.
-    short_templates = [
-        "Type the first letter of '{word}'. Answer is one letter.",
-        "Type the last letter of '{word}'. Answer is one letter.",
-        "Write the plural of '{regular_noun}'. Answer is one word (letters only).",
-        "Type this number in words: {digit_0_to_10}. Answer is one word (letters only).",
-        "Write the base form of this past tense: '{regular_past}'. Answer is one word (letters only)."
-    ]
-
     long_rule_line = (
-        "LONG items MUST use this exact prompt format: "
-        "'Write one short sentence using these words: WORD1, WORD2, WORD3.' "
-        "Use 3–4 very simple words from the word_bank. Do not add quotes around the list."
+        "LONG items must follow: 'Write one short sentence using these words: WORD1, WORD2, WORD3.'"
     )
 
     def payload_full():
         return {
-            "task": "Generate English quiz items for a 4x4 Bingo board (TOTAL 16).",
-            "hard_requirements": [
-                "Return ONLY a JSON object with keys mcq/short/long. No markdown.",
-                f"Produce EXACTLY mcq={mcq_need}, short={short_need}, long={long_need}.",
-                "No placeholders, no empty strings, no duplicates.",
-                "MCQ: exactly 4 options + valid answer_index (0..3).",
-                # SHORT rules
-                "SHORT items MUST be unambiguous and yield exactly ONE valid answer.",
-                "SHORT answer MUST be a single token (letters/digits only, no spaces, hyphens, or punctuation).",
-                "SHORT alternates MUST be an empty array [].",
-                "SHORT prompts MUST use one of these patterns:",
-                *short_templates,
-                # LONG rules
+            "task":"Generate a 16-cell ESL quiz board.",
+            "requirements":[
+                "Return ONLY JSON.",
+                f"Exactly mcq={mcq_need}, short={short_need}, long={long_need}.",
+
+                # SHORT rules (alternates allowed; all single-token)
+                "SHORT prompts should clearly indicate the expected format (e.g., '(one word)', '(single word)', or '(one letter)') to avoid ambiguity.",
+                "SHORT answers must be single-token (letters/digits only).",
+                "If there are equally correct one-word variants (e.g., spelling/synonym), include up to 3 in 'alternates' (each single-token). Otherwise use [].",
+
+                # LONG rule
                 long_rule_line,
-                "In every LONG prompt, explicitly show the required words using the phrase 'using these words:' "
-                "followed by the comma-separated list. Those words MUST also appear in required_words.",
             ],
-            "level": int(level),
-            "difficulty_label": diff_name,
-            "counts": {"mcq": mcq_need, "short": short_need, "long": long_need},
+            "level": level,
+            "difficulty": diff_name,
             "audience_rules": audience_rules,
-            "word_bank": {
-                "nouns": BANK.get("nouns", [])[:20],
-                "verbs": BANK.get("verbs", [])[:20],
-                "adjectives": BANK.get("adjectives", [])[:20],
-                "adverbs": BANK.get("adverbs", [])[:20],
-                "preps": BANK.get("preps", [])[:10],
-            },
-            "output_schema": base_schema
+            "word_bank": BANK,
+            "schema": base_schema
         }
 
-    def payload_patch(missing: Dict[str,int], banlist_prompts: List[str]):
+    def payload_patch(missing, banlist):
         return {
-            "task": "PATCH: Provide ONLY the missing items to reach the exact totals.",
-            "missing_counts": missing,
-            "banlist_prompts": banlist_prompts,
-            "instructions": [
-                "Return ONLY a JSON object with mcq/short/long arrays.",
-                "For any type with 0 missing, return an EMPTY array [].",
-                "Every prompt must be NEW and must NOT be in banlist_prompts.",
-                "No placeholders. No duplicates in this response.",
-                # Re-assert critical constraints in PATCH
-                "SHORT: single-token answer, alternates must be []. Use only the approved templates.",
-                long_rule_line
+            "task":"PATCH missing items only.",
+            "missing": missing,
+            "banlist_prompts": banlist,
+            "rules":[
+                "Return ONLY JSON.",
+                "Items must be NEW and not in banlist.",
+                "SHORT: single-token main answer; up to 3 single-token alternates for equally correct variants; else [].",
+                "Prefer clear prompts indicating '(one word)'/'(single word)'/'(one letter)'.",
+                long_rule_line,
             ],
-            "audience_rules": audience_rules,
-            "word_bank": {
-                "nouns": BANK.get("nouns", [])[:20],
-                "verbs": BANK.get("verbs", [])[:20],
-                "adjectives": BANK.get("adjectives", [])[:20],
-                "adverbs": BANK.get("adverbs", [])[:20],
-                "preps": BANK.get("preps", [])[:10],
-            },
-            "output_schema": base_schema
+            "word_bank": BANK,
+            "schema": base_schema,
         }
 
-    def call_llm(payload: Dict) -> str:
+    # ============================================================
+    # LLM call wrapper
+    # ============================================================
+    def call_llm(payload):
+        from openai import OpenAI
+        client = OpenAI(api_key=OPENAI_API_KEY)
         try:
-            from openai import OpenAI
-            client = OpenAI(api_key=OPENAI_API_KEY)
-            try:
-                resp = client.chat.completions.create(
-                    model=MODEL, temperature=TEMPERATURE,
-                    response_format={"type":"json_object"},
-                    messages=[{"role":"system","content":sys_msg},
-                              {"role":"user","content":json.dumps(payload, ensure_ascii=False)}]
-                )
-            except Exception:
-                resp = client.chat.completions.create(
-                    model=MODEL, temperature=TEMPERATURE,
-                    messages=[{"role":"system","content":sys_msg},
-                              {"role":"user","content":json.dumps(payload, ensure_ascii=False)}]
-                )
-            return resp.choices[0].message.content or ""
+            resp = client.chat.completions.create(
+                model=MODEL, temperature=TEMPERATURE,
+                response_format={"type":"json_object"},
+                messages=[
+                    {"role":"system","content":sys_msg},
+                    {"role":"user","content":json.dumps(payload, ensure_ascii=False)},
+                ],
+            )
+            return resp.choices[0].message.content
         except Exception:
-            import openai
-            openai.api_key = os.getenv("OPENAI_API_KEY")
-            try:
-                resp = openai.ChatCompletion.create(
-                    model=MODEL, temperature=TEMPERATURE,
-                    response_format={"type":"json_object"},
-                    messages=[{"role":"system","content":sys_msg},
-                              {"role":"user","content":json.dumps(payload, ensure_ascii=False)}]
-                )
-            except Exception:
-                resp = openai.ChatCompletion.create(
-                    model=MODEL, temperature=TEMPERATURE,
-                    messages=[{"role":"system","content":sys_msg},
-                              {"role":"user","content":json.dumps(payload, ensure_ascii=False)}]
-                )
-            return resp["choices"][0]["message"]["content"] or ""
+            resp = client.chat.completions.create(
+                model=MODEL, temperature=TEMPERATURE,
+                messages=[
+                    {"role":"system","content":sys_msg},
+                    {"role":"user","content":json.dumps(payload, ensure_ascii=False)},
+                ],
+            )
+            return resp.choices[0].message.content
 
-    # ---- accumulate, track prompts to avoid during PATCH ----
+    # ============================================================
+    # ACCUMULATION + GENERATION LOGIC
+    # ============================================================
     acc = {"mcq": [], "short": [], "long": []}
-    seen_prompts_norm = set()
+    seen_norm = set()
 
     def missing_counts():
         return {
-            "mcq":  max(0, mcq_need   - len(acc["mcq"])),
-            "short":max(0, short_need - len(acc["short"])),
-            "long": max(0, long_need  - len(acc["long"]))
+            "mcq": max(0, mcq_need - len(acc["mcq"])),
+            "short": max(0, short_need - len(acc["short"])),
+            "long": max(0, long_need - len(acc["long"])),
         }
 
-    # Full attempts
-    for a in range(1, MAX_FULL_ATTEMPTS+1):
+    # ---- FULL attempts ----
+    for attempt in range(1, MAX_FULL_ATTEMPTS+1):
         raw = call_llm(payload_full())
         data = extract_json(raw)
         block = validate_block(data)
 
-        print(f"[GEN#{a}] got: mcq={len(block['mcq'])}, short={len(block['short'])}, long={len(block['long'])}")
-
         for t in ("mcq","short","long"):
             for it in block[t]:
                 p = _norm(it.get("prompt"))
-                if p and p not in seen_prompts_norm:
+                if p and p not in seen_norm:
                     acc[t].append(it)
-                    seen_prompts_norm.add(p)
+                    seen_norm.add(p)
 
-        miss = missing_counts()
-        if sum(miss.values()) == 0:
-            acc["mcq"]   = acc["mcq"][:mcq_need]
-            acc["short"] = acc["short"][:short_need]
-            acc["long"]  = acc["long"] [:long_need]
-            print(f"[GEN OK] Final: mcq={len(acc['mcq'])}, short={len(acc['short'])}, long={len(acc['long'])}")
-            return acc
+        if sum(missing_counts().values()) == 0:
+            break
 
-    # Patch attempts
-    for pidx in range(1, MAX_PATCH_ATTEMPTS+1):
+    # ---- PATCH attempts ----
+    for patch in range(1, MAX_PATCH_ATTEMPTS+1):
         miss = missing_counts()
         if sum(miss.values()) == 0:
             break
-        banlist = list(seen_prompts_norm)
+
+        banlist = list(seen_norm)
         raw = call_llm(payload_patch(miss, banlist))
         data = extract_json(raw)
         block = validate_block(data)
 
-        # Enforce exact counts for each type in this PATCH
+        # accept only exact counts per type for this patch
         for t in ("mcq","short","long"):
             need = miss[t]
             got  = len(block[t])
             if need == 0:
                 block[t] = []
             elif got != need:
-                print(f"[PATCH#{pidx}] type '{t}' expected {need} but got {got} → will retry")
                 block[t] = []
-
-        print(f"[PATCH#{pidx}] accepted: mcq={len(block['mcq'])}, short={len(block['short'])}, long={len(block['long'])}")
 
         for t in ("mcq","short","long"):
             for it in block[t]:
                 p = _norm(it.get("prompt"))
-                if p and p not in seen_prompts_norm:
+                if p and p not in seen_norm:
                     acc[t].append(it)
-                    seen_prompts_norm.add(p)
+                    seen_norm.add(p)
 
         if sum(missing_counts().values()) == 0:
             break
 
+    # final check
     miss = missing_counts()
     if sum(miss.values()) != 0:
         raise RuntimeError(f"LLM could not produce exactly 16 items. Missing -> {miss}")
 
     acc["mcq"]   = acc["mcq"][:mcq_need]
     acc["short"] = acc["short"][:short_need]
-    acc["long"]  = acc["long"] [:long_need]
-    print(f"[GEN OK] Final after PATCH: mcq={len(acc['mcq'])}, short={len(acc['short'])}, long={len(acc['long'])}")
+    acc["long"]  = acc["long"][:long_need]
     return acc
+
 
 
 # ==== NEW HELPERS (place near your GPT functions) ====
@@ -1426,7 +1401,7 @@ def create_board_quiz(username: str, level: int) -> int:
         # Use the same client style as your gpt_generate_quiz
         try:
             from openai import OpenAI
-            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            client = OpenAI(api_key=OPENAI_API_KEY)
             try:
                 resp = client.chat.completions.create(
                     model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
@@ -1449,7 +1424,7 @@ def create_board_quiz(username: str, level: int) -> int:
             txt = resp.choices[0].message.content or ""
         except Exception:
             import openai
-            openai.api_key = os.getenv("OPENAI_API_KEY")
+            openai.api_key = OPENAI_API_KEY
             try:
                 resp = openai.ChatCompletion.create(
                     model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
@@ -3352,29 +3327,37 @@ def admin_analytics_page():
         users = []
     selected = users[0] if users else None
     return render_template("admin_analytics.html", users=users, selected_user=selected)
-
+from collections import defaultdict
+from datetime import date, timedelta
+from flask import jsonify, request, session
 @app.get("/admin/analytics/data")
 def admin_analytics_data():
-    # JSON data for charts
+    # ---- local imports (self-contained) ----
+    from datetime import date, timedelta
+    from collections import defaultdict
+
+    # ---- auth & input ----
     if "username" not in session:
         return jsonify({"error": "auth required"}), 401
-
     username = (request.args.get("username") or "").strip()
     if not username:
         return jsonify({"error": "username is required"}), 400
 
     db = get_db()
 
-    # ----- KPIs -----
-    # Total quizzes / attempts / accuracy
+    # ---------------- KPIs ----------------
+    # quizzes
     try:
-        qz_rows = db.execute("SELECT id, created_at FROM quizzes WHERE username=?", (username,)).fetchall()
+        qz_rows = db.execute(
+            "SELECT id, created_at FROM quizzes WHERE username=?",
+            (username,),
+        ).fetchall()
         quiz_ids = [r["id"] for r in qz_rows]
         total_quizzes = len(quiz_ids)
     except Exception:
         quiz_ids, total_quizzes = [], 0
 
-    # Gather answers for accuracy
+    # answers → attempts/accuracy
     total_answers = 0
     total_correct = 0
     try:
@@ -3382,46 +3365,41 @@ def admin_analytics_data():
             qmarks = ",".join(["?"] * len(quiz_ids))
             ans_rows = db.execute(
                 f"SELECT is_correct FROM quiz_answers WHERE quiz_id IN ({qmarks})",
-                quiz_ids
+                quiz_ids,
             ).fetchall()
             total_answers = len(ans_rows)
             total_correct = sum(1 for r in ans_rows if int(r["is_correct"]) == 1)
     except Exception:
         pass
-
     overall_accuracy = (total_correct / total_answers) if total_answers else 0.0
-    total_attempts = total_answers  # treats each answer as an attempt for “activity mix”
+    total_attempts = total_answers
 
-    # Stories read
-    stories_read = 0
+    # stories read
     try:
         stories_read = db.execute(
             "SELECT COUNT(*) AS c FROM story_reads WHERE username=?",
-            (username,)
+            (username,),
         ).fetchone()["c"]
     except Exception:
         stories_read = 0
 
-    # New vocab entries as another activity indicator (optional)
-    vocab_new = 0
+    # vocab (optional)
     try:
         vocab_new = db.execute(
             "SELECT COUNT(*) AS c FROM vocab WHERE username=?",
-            (username,)
+            (username,),
         ).fetchone()["c"]
     except Exception:
         vocab_new = 0
 
-    # Total XP
-    total_xp = 0
+    # XP
     try:
         row = db.execute("SELECT xp FROM users WHERE username=?", (username,)).fetchone()
         total_xp = row["xp"] if row else 0
     except Exception:
         total_xp = 0
 
-    # ----- Timeseries: last 30 days attempts & accuracy -----
-    # Build date buckets
+    # ------------- Timeseries (30d) -------------
     today = date.today()
     days = [today - timedelta(days=i) for i in range(29, -1, -1)]
     labels = [d.strftime("%m-%d") for d in days]
@@ -3434,15 +3412,14 @@ def admin_analytics_data():
             rows = db.execute(
                 f"""
                 SELECT qa.is_correct, qa.created_at
-                FROM quiz_answers qa
-                WHERE qa.quiz_id IN ({qmarks})
+                  FROM quiz_answers qa
+                 WHERE qa.quiz_id IN ({qmarks})
                 """,
-                quiz_ids
+                quiz_ids,
             ).fetchall()
             for r in rows:
-                ts = (r["created_at"] or "")
-                # be tolerant with timestamp parsing
-                dkey = (ts[:10] if isinstance(ts, str) and len(ts)>=10 else today.isoformat())
+                ts = r["created_at"] or ""
+                dkey = ts[:10] if isinstance(ts, str) and len(ts) >= 10 else None
                 if dkey in attempts_by_day:
                     attempts_by_day[dkey] += 1
                     if int(r["is_correct"]) == 1:
@@ -3459,14 +3436,14 @@ def admin_analytics_data():
         attempts_series.append(a)
         accuracy_series.append((c / a) if a else 0.0)
 
-    # ----- Accuracy by level -----
-    # If you store level on quizzes table, aggregate; else default single bucket.
+    # ------------- Accuracy by level -------------
     acc_map = defaultdict(lambda: {"a": 0, "c": 0})
     try:
         rows = db.execute(
             "SELECT q.level, qa.is_correct FROM quizzes q "
             "JOIN quiz_answers qa ON qa.quiz_id = q.id "
-            "WHERE q.username=?", (username,)
+            "WHERE q.username=?",
+            (username,),
         ).fetchall()
         for r in rows:
             lvl = int(r["level"]) if r["level"] is not None else 1
@@ -3475,62 +3452,195 @@ def admin_analytics_data():
     except Exception:
         pass
 
-    lvls = sorted(acc_map.keys()) or [1,2,3,4,5]
+    lvls = sorted(acc_map.keys()) or [1, 2, 3, 4, 5]
     acc_by_level_labels = [f"L{l}" for l in lvls]
-    acc_by_level_values = [(acc_map[l]["c"] / acc_map[l]["a"]) if acc_map[l]["a"] else 0.0 for l in lvls]
+    acc_by_level_values = [
+        (acc_map[l]["c"] / acc_map[l]["a"]) if acc_map[l]["a"] else 0.0 for l in lvls
+    ]
 
-    # ----- Worksheets (4-week cycle) -----
-    # Try to find the newest worksheet cycle for the user and compute unlock/submission.
-    wk_labels = [f"Week {i}" for i in range(1,5)]
-    wk_unlocked = [0,0,0,0]
-    wk_submitted = [0,0,0,0]
+    # ---------------- Worksheets ----------------
+    wk_labels = [f"Week {i}" for i in range(1, 5)]
+    wk_unlocked = [0, 0, 0, 0]
+    wk_submitted = [0, 0, 0, 0]
+    worksheet_details = []
 
+    # helpers
+    def _table_exists(dbh, name: str) -> bool:
+        try:
+            row = dbh.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (name,),
+            ).fetchone()
+            return bool(row)
+        except Exception:
+            return False
+
+    def _column_exists(dbh, table: str, col: str) -> bool:
+        try:
+            cols = dbh.execute(f"PRAGMA table_info({table})").fetchall()
+            return any(c["name"] == col for c in cols)
+        except Exception:
+            return False
+
+    # latest worksheet for this user
+    ws_row = None
     try:
-        row = db.execute(
-            "SELECT id, created_at, payload FROM career_worksheets WHERE username=? ORDER BY id DESC LIMIT 1",
-            (username,)
+        ws_row = db.execute(
+            "SELECT id, created_at, job, level FROM career_worksheets "
+            "WHERE username=? ORDER BY id DESC LIMIT 1",
+            (username,),
         ).fetchone()
-        if row:
-            unlocks = compute_week_unlocks(row["created_at"], weeks=4)
-            for st in unlocks:
-                wk_unlocked[st["week"]-1] = 1 if st["is_unlocked"] else 0
-
-            # If you later store per-week submissions, count them here.
-            # Example (if you create such a table):
-            # sub_rows = db.execute("SELECT week, COUNT(1) c FROM career_submissions WHERE worksheet_id=? GROUP BY week", (row["id"],)).fetchall()
-            # for sr in sub_rows:
-            #     wk_submitted[int(sr["week"])-1] = min(1, sr["c"])
-            # For now, leave submitted as 0s unless you’ve implemented storage.
     except Exception:
-        pass
+        ws_row = None
 
-    # ----- Stories over time (last 30 days) -----
+    submissions_by_week = {}
+    reviews_by_submission = {}
+
+    if ws_row:
+        # unlock states (your existing helper)
+        unlocks = compute_week_unlocks(ws_row["created_at"], weeks=4)
+        for u in unlocks:
+            wk = int(u["week"])
+            wk_unlocked[wk - 1] = 1 if u["is_unlocked"] else 0
+
+        # detect submissions table & FK
+        sub_table = None
+        for cand in ("career_submissions", "career_submission"):
+            if _table_exists(db, cand):
+                sub_table = cand
+                break
+
+        fk_col = None
+        if sub_table:
+            for cand_col in ("ws_id", "worksheet_id"):
+                if _column_exists(db, sub_table, cand_col):
+                    fk_col = cand_col
+                    break
+
+        # detect embedded review columns on submission table
+        embedded_cols = {
+            "score": _column_exists(db, sub_table, "review_score") if sub_table else False,
+            "comment": _column_exists(db, sub_table, "review_comment") if sub_table else False,
+            "reviewed_at": _column_exists(db, sub_table, "reviewed_at") if sub_table else False,
+        }
+
+        # load submissions (and embedded review data if present)
+        sub_rows = []
+        if sub_table and fk_col:
+            try:
+                select_cols = "id, week, username, submitted_at"
+                if any(embedded_cols.values()):
+                    # add any embedded review columns that exist
+                    if embedded_cols["score"]:
+                        select_cols += ", review_score"
+                    if embedded_cols["comment"]:
+                        select_cols += ", review_comment"
+                    if embedded_cols["reviewed_at"]:
+                        select_cols += ", reviewed_at"
+
+                sub_rows = db.execute(
+                    f"""
+                    SELECT {select_cols}
+                      FROM {sub_table}
+                     WHERE {fk_col}=? AND username=?
+                    """,
+                    (ws_row["id"], username),
+                ).fetchall()
+            except Exception:
+                sub_rows = []
+
+        # map week -> submission; also seed reviews_by_submission from embedded cols
+        for r in sub_rows:
+            w = int(r["week"])
+            sub_info = {
+                "submission_id": r["id"],
+                "submitted_at": r["submitted_at"],
+            }
+            submissions_by_week[w] = sub_info
+
+            # if reviews are embedded, take them directly
+            if any(embedded_cols.values()):
+                reviews_by_submission[int(r["id"])] = {
+                    "score": r["review_score"] if embedded_cols["score"] else None,
+                    "comment": r["review_comment"] if embedded_cols["comment"] else None,
+                    "reviewed_at": r["reviewed_at"] if embedded_cols["reviewed_at"] else None,
+                }
+
+        # if separate career_reviews table exists, it overrides/augments embedded values
+        sub_ids = [s["submission_id"] for s in submissions_by_week.values()]
+        if sub_ids and _table_exists(db, "career_reviews"):
+            try:
+                qmarks = ",".join(["?"] * len(sub_ids))
+                rv_rows = db.execute(
+                    f"""
+                    SELECT submission_id, score, comment, reviewed_at
+                      FROM career_reviews
+                     WHERE submission_id IN ({qmarks})
+                    """,
+                    sub_ids,
+                ).fetchall()
+            except Exception:
+                rv_rows = []
+            else:
+                for r in rv_rows:
+                    reviews_by_submission[int(r["submission_id"])] = {
+                        "score": r["score"],
+                        "comment": r["comment"],
+                        "reviewed_at": r["reviewed_at"],
+                    }
+
+        # assemble detail rows (weeks 1..4)
+        for w in range(1, 5):
+            sub = submissions_by_week.get(w)
+            reviewed = reviews_by_submission.get(sub["submission_id"]) if sub else None
+            wk_submitted[w - 1] = 1 if sub else 0
+            worksheet_details.append(
+                {
+                    "week": w,
+                    "is_unlocked": bool(wk_unlocked[w - 1]),
+                    "submitted": bool(sub),
+                    "submitted_at": sub["submitted_at"] if sub else None,
+                    "submission_id": sub["submission_id"] if sub else None,
+                    "review": reviewed or None,
+                }
+            )
+    else:
+        # placeholders if no worksheet yet
+        for w in range(1, 5):
+            worksheet_details.append(
+                {
+                    "week": w,
+                    "is_unlocked": False,
+                    "submitted": False,
+                    "submitted_at": None,
+                    "submission_id": None,
+                    "review": None,
+                }
+            )
+
+    # ------------- Stories (30d) -------------
     stories_by_day = {d.isoformat(): 0 for d in days}
     try:
         rows = db.execute(
-            "SELECT started_at FROM story_reads WHERE username=?",
-            (username,)
+            "SELECT started_at FROM story_reads WHERE username=?", (username,)
         ).fetchall()
         for r in rows:
-            ts = (r["started_at"] or "")
-            dkey = (ts[:10] if isinstance(ts, str) and len(ts)>=10 else today.isoformat())
+            ts = r["started_at"] or ""
+            dkey = ts[:10] if isinstance(ts, str) and len(ts) >= 10 else None
             if dkey in stories_by_day:
                 stories_by_day[dkey] += 1
     except Exception:
         pass
     stories_series = [stories_by_day[d.isoformat()] for d in days]
 
-    # ----- XP cumulative (roughly by day) -----
-    # If you don’t keep a history, show a flat line at current XP.
-    xp_series = []
+    # ------------- XP curve (linear placeholder) -------------
     try:
-        current = total_xp
-        step = (current / max(1, len(days)-1))
-        for i, _ in enumerate(days):
-            xp_series.append(round(step * i))
+        step = (total_xp / max(1, len(days) - 1))
+        xp_values = [round(step * i) for i, _ in enumerate(days)]
     except Exception:
-        xp_series = [0 for _ in days]
+        xp_values = [0 for _ in days]
 
+    # ------------- Payload -------------
     payload = {
         "kpis": {
             "total_quizzes": total_quizzes,
@@ -3538,32 +3648,155 @@ def admin_analytics_data():
             "stories_read": stories_read,
             "total_xp": total_xp,
             "total_attempts": total_attempts,
-            "vocab_new": vocab_new
+            "vocab_new": vocab_new,
         },
-        "timeseries": {
-            "labels": labels,
-            "attempts": attempts_series,
-            "accuracy": accuracy_series
-        },
-        "acc_by_level": {
-            "labels": acc_by_level_labels,
-            "values": acc_by_level_values
-        },
-        "worksheets": {
-            "labels": wk_labels,
-            "unlocked": wk_unlocked,
-            "submitted": wk_submitted
-        },
-        "stories": {
-            "labels": labels,
-            "counts": stories_series
-        },
-        "xp": {
-            "labels": labels,
-            "values": xp_series
-        }
+        "timeseries": {"labels": labels, "attempts": attempts_series, "accuracy": accuracy_series},
+        "acc_by_level": {"labels": acc_by_level_labels, "values": acc_by_level_values},
+        "worksheets": {"labels": wk_labels, "unlocked": wk_unlocked, "submitted": wk_submitted},
+        "worksheet_details": worksheet_details,
+        "stories": {"labels": labels, "counts": stories_series},
+        "xp": {"labels": labels, "values": xp_values},
     }
     return jsonify(payload)
+
+
+
+@app.get("/admin/worksheets/submission/<int:submission_id>")
+def admin_fetch_submission(submission_id: int):
+    if "username" not in session:
+        return jsonify({"error": "auth required"}), 401
+    db = get_db()
+
+    # core submission + worksheet
+    sub = db.execute("""
+      SELECT s.id, s.worksheet_id, s.username, s.week, s.answers_json, s.submitted_at,
+             w.payload AS worksheet_payload
+      FROM career_submissions s
+      JOIN career_worksheets w ON w.id = s.worksheet_id
+      WHERE s.id=?
+    """, (submission_id,)).fetchone()
+    if not sub:
+        return jsonify({"error": "not found"}), 404
+
+    # parse
+    try:
+        answers = json.loads(sub["answers_json"] or "{}")
+    except Exception:
+        answers = {}
+
+    # questions come from worksheet payload (if stored). Fallback: derive keys from answers.
+    questions = []
+    try:
+        wp = json.loads(sub["worksheet_payload"] or "{}")
+        # expected structure example: {"questions":[{"key":"q1","prompt":"...","max_points":10}, ...]}
+        for q in (wp.get("questions") or []):
+            questions.append({
+                "key": q.get("key") or "",
+                "prompt": q.get("prompt") or "",
+                "max_points": q.get("max_points") or 0
+            })
+    except Exception:
+        pass
+
+    if not questions:
+        # derive from answer keys if payload wasn't saved
+        for k in sorted(answers.keys()):
+            questions.append({"key": k, "prompt": k, "max_points": 0})
+
+    # existing review (if any)
+    rev = db.execute("""
+      SELECT id, score, comment, reviewed_at
+      FROM career_reviews WHERE submission_id=?
+    """, (submission_id,)).fetchone()
+
+    items = []
+    if rev:
+        rows = db.execute("""
+          SELECT qkey, points, comment
+          FROM career_review_items WHERE review_id=? ORDER BY qkey
+        """, (rev["id"],)).fetchall()
+        items = [{"key": r["qkey"], "points": r["points"], "comment": r["comment"]} for r in rows]
+
+    return jsonify({
+        "submission": {
+            "id": sub["id"],
+            "username": sub["username"],
+            "week": sub["week"],
+            "submitted_at": sub["submitted_at"]
+        },
+        "questions": questions,
+        "answers": answers,
+        "existing_review": (None if not rev else {
+            "review_id": rev["id"],
+            "score": rev["score"],
+            "comment": rev["comment"],
+            "reviewed_at": rev["reviewed_at"],
+            "items": items
+        })
+    })
+@app.post("/admin/worksheets/review/<int:submission_id>")
+def admin_save_submission_review(submission_id: int):
+    if "username" not in session:
+        return jsonify({"error": "auth required"}), 401
+    db = get_db()
+
+    data = request.get_json(silent=True) or {}
+    final_score = int(data.get("score") or 0)
+    overall_comment = (data.get("comment") or "").strip()
+
+    # Accept either `items=[{key,points,comment}]` or `per_item_feedback=[{index,comment}]`
+    items = data.get("items")
+    if items is None:
+        pif = data.get("per_item_feedback") or []
+        items = [{"key": f"Q{it.get('index')}", "points": None, "comment": it.get("comment", "")} for it in pif]
+
+    # Upsert review header
+    rev = db.execute("SELECT id FROM career_reviews WHERE submission_id=?", (submission_id,)).fetchone()
+    if rev:
+        db.execute("""
+            UPDATE career_reviews
+               SET score=?, comment=?, reviewed_at=CURRENT_TIMESTAMP
+             WHERE id=?
+        """, (final_score, overall_comment, rev["id"]))
+        review_id = rev["id"]
+    else:
+        cur = db.execute("""
+            INSERT INTO career_reviews(submission_id, score, comment, reviewed_at)
+            VALUES(?,?,?,CURRENT_TIMESTAMP)
+        """, (submission_id, final_score, overall_comment))
+        review_id = cur.lastrowid
+
+    # Ensure unique index for upsert (safe to run every time)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS career_review_items(
+            id INTEGER PRIMARY KEY,
+            review_id INTEGER NOT NULL,
+            qkey TEXT NOT NULL,
+            points REAL,
+            comment TEXT,
+            UNIQUE(review_id, qkey)
+        )
+    """)
+    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_review_items_unique ON career_review_items(review_id, qkey)")
+
+    # Upsert per-question items
+    for it in (items or []):
+        qkey = (it.get("key") or "").strip()
+        if not qkey:
+            continue
+        pts = it.get("points")
+        cmt = (it.get("comment") or "").strip()
+        db.execute("""
+            INSERT INTO career_review_items(review_id, qkey, points, comment)
+            VALUES(?,?,?,?)
+            ON CONFLICT(review_id, qkey)
+            DO UPDATE SET points=excluded.points, comment=excluded.comment
+        """, (review_id, qkey, pts, cmt))
+
+    db.commit()
+    return jsonify({"ok": True, "review_id": review_id})
+
+
 
 from datetime import datetime, timedelta
 
@@ -4334,22 +4567,75 @@ def career_overview(ws_id):
     username = session["username"]
 
     db = get_db()
-    row = db.execute("SELECT id, username, job, level, created_at, payload FROM career_worksheets WHERE id=?", (ws_id,)).fetchone()
+
+    # Load worksheet
+    row = db.execute("""
+        SELECT id, username, job, level, created_at, payload
+        FROM career_worksheets
+        WHERE id=?
+    """, (ws_id,)).fetchone()
+
     if not row or row["username"] != username:
         flash("Worksheet not found.", "danger")
         return redirect(url_for("career"))
 
     payload = json.loads(row["payload"])
     unlocks = compute_week_unlocks(row["created_at"], weeks=4)
-    # Make a lightweight view model
+
+    # Load all submissions & reviews for this worksheet
+    subs = db.execute("""
+        SELECT
+            id AS submission_id,
+            week,
+            submitted_at,
+            review_score,
+            review_comment,
+            reviewed_at
+        FROM career_submissions
+        WHERE worksheet_id=? AND username=?
+    """, (ws_id, username)).fetchall()
+
+    # Put submissions into a dict for fast lookup
+    sub_map = {}
+    for s in subs:
+        sub_map[s["week"]] = {
+            "submitted": True,
+            "submission_id": s["submission_id"],
+            "submitted_at": s["submitted_at"],
+            "review": {
+                "score": s["review_score"],
+                "comment": s["review_comment"],
+                "reviewed_at": s["reviewed_at"]
+            } if s["review_score"] is not None else None
+        }
+
+    # ===== Build weeks_vm with submission + review status =====
     weeks_vm = []
+
     for st in unlocks:
-        weeks_vm.append({
-            "week": st["week"],
-            "title": payload["weeks"][st["week"]-1].get("title", f"Week {st['week']}"),
+        wk = st["week"]
+
+        item = {
+            "week": wk,
+            "title": payload["weeks"][wk-1].get("title", f"Week {wk}"),
             "unlock_at_str": _fmt_kst(st["unlock_at"]),
-            "is_unlocked": st["is_unlocked"]
-        })
+            "is_unlocked": st["is_unlocked"],
+
+            # default values
+            "submitted": False,
+            "submitted_at": None,
+            "submission_id": None,
+            "review": None
+        }
+
+        if wk in sub_map:
+            item["submitted"] = True
+            item["submitted_at"] = sub_map[wk]["submitted_at"]
+            item["submission_id"] = sub_map[wk]["submission_id"]
+            item["review"] = sub_map[wk]["review"]    # None or {score, comment, reviewed_at}
+
+        weeks_vm.append(item)
+
     return render_template(
         "career_overview_4w.html",
         ws_id=row["id"],
@@ -4359,18 +4645,116 @@ def career_overview(ws_id):
         weeks_vm=weeks_vm
     )
 
-@app.get("/career/<int:ws_id>")
-def career_view(ws_id):
-    if "username" not in session:
-        return redirect(url_for("login"))
-    username = session["username"]
+# routes.py (or wherever you define routes)
+from flask import Blueprint, render_template, request, session, redirect, url_for, flash, jsonify
+from datetime import datetime
+import json
 
-    week = int(request.args.get("week") or 1)
-    week = max(1, min(4, week))
+bp = Blueprint("career", __name__)
+
+def _table_exists(db, name):
+    try:
+        r = db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (name,)
+        ).fetchone()
+        return bool(r)
+    except Exception:
+        return False
+
+def _col_exists(db, table, col):
+    try:
+        cols = db.execute(f"PRAGMA table_info({table})").fetchall()
+        return any(c["name"] == col for c in cols)
+    except Exception:
+        return False
+
+def _first_existing_col(db, table, candidates):
+    for c in candidates:
+        if _col_exists(db, table, c):
+            return c
+    return None
+
+def _load_submission_json_blob(db, sub_table, sub_row):
+    """
+    Try several common column names to retrieve the stored worksheet answers/sections.
+    We expect a JSON string that contains sections OR per-part answers.
+    Returns a dict or {}.
+    """
+    if not sub_row:
+        return {}
+    json_col = _first_existing_col(db, sub_table, [
+        "answers_json", "payload_json", "content_json", "sections_json", "submission_json"
+    ])
+    if json_col and sub_row[json_col]:
+        try:
+            return json.loads(sub_row[json_col])
+        except Exception:
+            return {}
+    return {}
+
+def _load_review_bundle(db, submission_id, sub_table=None, sub_row=None):
+    """
+    Returns: dict {
+      "score": (num|None),
+      "comment": (str|None),
+      "reviewed_at": (str|None),
+      "items": [{"qkey":"Q1","comment":"..."}, ...]   # may be empty
+    }
+    Prefers dedicated career_reviews/career_review_items tables; falls back to
+    embedded columns on the submission row if present.
+    """
+    out = {"score": None, "comment": None, "reviewed_at": None, "items": []}
+
+    # Prefer dedicated review tables
+    if _table_exists(db, "career_reviews"):
+        rv = db.execute(
+            "SELECT submission_id, score, comment, reviewed_at "
+            "FROM career_reviews WHERE submission_id=?",
+            (submission_id,)
+        ).fetchone()
+        if rv:
+            out["score"] = rv["score"]
+            out["comment"] = rv["comment"]
+            out["reviewed_at"] = rv["reviewed_at"]
+
+            # Per-item
+            if _table_exists(db, "career_review_items"):
+                it = db.execute(
+                    "SELECT qkey, comment FROM career_review_items WHERE review_id = ("
+                    "  SELECT id FROM career_reviews WHERE submission_id=?"
+                    ")",
+                    (submission_id,)
+                ).fetchall()
+                out["items"] = [{"qkey": r["qkey"], "comment": r["comment"]} for r in it]
+            return out
+
+    # Fallback: embedded columns on submission row
+    if sub_table and sub_row:
+        score_col = _col_exists(db, sub_table, "review_score")
+        comm_col  = _col_exists(db, sub_table, "review_comment")
+        time_col  = _col_exists(db, sub_table, "reviewed_at")
+        if score_col or comm_col or time_col:
+            out["score"] = sub_row["review_score"] if score_col else None
+            out["comment"] = sub_row["review_comment"] if comm_col else None
+            out["reviewed_at"] = sub_row["reviewed_at"] if time_col else None
+    return out
+
+@app.get("/career/<int:ws_id>/week/<int:week>")
+def career_view(ws_id, week):
+    username = session.get("username")
+    if not username:
+        return redirect(url_for("login"))
 
     db = get_db()
-    row = db.execute("SELECT id, username, job, level, created_at, payload FROM career_worksheets WHERE id=?", (ws_id,)).fetchone()
-    if not row or row["username"] != username:
+
+    # --- 1) Load worksheet meta + payload JSON (IMPORTANT: no week1_json cols)
+    row = db.execute("""
+        SELECT id, username, job, level, created_at, payload
+        FROM career_worksheets
+        WHERE id=? AND username=?
+    """, (ws_id, username)).fetchone()
+    if not row:
         flash("Worksheet not found.", "danger")
         return redirect(url_for("career"))
 
@@ -4381,48 +4765,363 @@ def career_view(ws_id):
         flash(f"Week {week} unlocks at { _fmt_kst(st['unlock_at']) }.", "warning")
         return redirect(url_for("career_overview", ws_id=ws_id))
 
+    # Extract this week's content
     W = payload["weeks"][week-1]
+    reading         = W.get("reading", "")
+    vocab           = W.get("vocab", [])
+    comprehension   = W.get("comprehension", [])
+    mcq             = W.get("mcq", [])
+    short           = W.get("short", [])
+    writing         = W.get("writing", [])
+
+    # --- 2) Find latest submission (IMPORTANT: use career_submissions only)
+    sub_cols = "id, answers_json, submitted_at"
+    # Try to include optional review columns if they exist
+    if _col_exists(db, "career_submissions", "review_score"):
+        sub_cols += ", review_score"
+    if _col_exists(db, "career_submissions", "review_comment"):
+        sub_cols += ", review_comment"
+    if _col_exists(db, "career_submissions", "reviewed_at"):
+        sub_cols += ", reviewed_at"
+    if _col_exists(db, "career_submissions", "review_items_json"):
+        sub_cols += ", review_items_json"
+
+    sub = db.execute(f"""
+        SELECT {sub_cols}
+        FROM career_submissions
+        WHERE worksheet_id=? AND username=? AND week=?
+        ORDER BY submitted_at DESC
+        LIMIT 1
+    """, (ws_id, username, week)).fetchone()
+
+    prefill = {}
+    review = {"score": None, "comment": None, "reviewed_at": None}
+    fbk_map = {}  # {"Q1": "...", "Q2": "...", ...}
+    is_reviewed = False
+
+    if sub:
+        # answers for prefill
+        if sub["answers_json"]:
+            try:
+                prefill = json.loads(sub["answers_json"])
+            except Exception:
+                prefill = {}
+
+        # review fields (all from career_submissions)
+        score_exists = "review_score" in sub.keys()
+        comment_exists = "review_comment" in sub.keys()
+        time_exists = "reviewed_at" in sub.keys()
+        items_exists = "review_items_json" in sub.keys()
+
+        if score_exists:
+            review["score"] = sub["review_score"]
+        if comment_exists:
+            review["comment"] = sub["review_comment"]
+        if time_exists:
+            review["reviewed_at"] = sub["reviewed_at"]
+
+        if items_exists and sub["review_items_json"]:
+            try:
+                fbk_map = json.loads(sub["review_items_json"]) or {}
+            except Exception:
+                fbk_map = {}
+
+        # consider reviewed if any review signal is present
+        is_reviewed = any([
+            review.get("score") is not None,
+            bool(review.get("comment")),
+            bool(review.get("reviewed_at")),
+            bool(fbk_map)
+        ])
+
     return render_template(
         "career_worksheet_4w.html",
         ws_id=ws_id,
+        week=week,
         job=payload.get("job", ""),
         level=payload.get("_level", row["level"]),
         created_at=row["created_at"],
-        week=week,
-        title=W["title"],
-        reading=W["reading"],
-        sections=W.get("sections", []),
-        mcq=W.get("mcq", []),
-        short=W.get("short", []),
-        vocab=W.get("vocab", []),  # <-- add this
-        comprehension=W.get("comprehension", []),  # <-- and this
-        writing=W.get("writing", [])  # <-- and this
+
+        reading=reading,
+        vocab=vocab,
+        comprehension=comprehension,
+        mcq=mcq,
+        short=short,
+        writing=writing,
+
+        prefill=prefill,
+        is_reviewed=is_reviewed,
+        review=review,
+        fbk_map=fbk_map
     )
 
+def is_admin():
+    # adjust to your auth; simplest: session["role"] == "admin"
+    return session.get("role") == "admin"
+def get_review_for(ws_id: int, username: str, week: int):
+    db = get_db()
+    row = db.execute("""
+        SELECT
+            s.id               AS submission_id,
+            s.worksheet_id,
+            s.username,
+            s.week,
+            s.submitted_at,
+            s.answers_json,
+            s.review_score,
+            s.review_comment,
+            s.reviewed_at,
+            s.review_item_json
+        FROM career_submissions AS s
+        WHERE s.worksheet_id = ? AND s.username = ? AND s.week = ?
+        LIMIT 1
+    """, (ws_id, username, week)).fetchone()
 
-@app.post("/career/<int:ws_id>/submit")
-def career_submit(ws_id):
+    if not row:
+        return None
+
+    # Parse optional JSON fields safely
+    def _loads(x, default=None):
+        if not x:
+            return default
+        try:
+            return json.loads(x)
+        except Exception:
+            return default
+
+    return {
+        "submission_id": row["submission_id"],
+        "worksheet_id": row["worksheet_id"],
+        "username": row["username"],
+        "week": row["week"],
+        "submitted_at": row["submitted_at"],
+        "answers": _loads(row["answers_json"], default=None),
+        "review": {
+            "score": row["review_score"],
+            "comment": row["review_comment"],
+            "reviewed_at": row["reviewed_at"],
+            "per_item": _loads(row["review_item_json"], default=None),
+        }
+    }
+
+
+def get_scores_by_week(ws_id:int, username:str):
+    """Return {1: score_or_None, 2:...,3:...,4:...} for the overview badges."""
+    db = get_db()
+    rows = db.execute("""
+      SELECT s.week, r.score
+      FROM career_submissions s
+      JOIN career_reviews r ON r.submission_id = s.id
+      WHERE s.worksheet_id=? AND s.username=?
+    """, (ws_id, username)).fetchall()
+    out = {1:None,2:None,3:None,4:None}
+    for r in rows: out[int(r["week"])] = r["score"]
+    return out
+# Accept: /career/123/submit  (reads ?week=...)
+#     and /career/123/submit/2
+from flask import request, redirect, url_for, flash, session
+import json, sqlite3
+
+# Accept: /career/<ws_id>/submit  (?week=...) and /career/<ws_id>/submit/<week>
+@app.post("/career/<int:ws_id>/submit", defaults={"week": None})
+@app.post("/career/<int:ws_id>/submit/<int:week>")
+def career_submit(ws_id, week):
     if "username" not in session:
         return redirect(url_for("login"))
     username = session["username"]
-    week = int(request.args.get("week") or 1)
-    week = max(1, min(4, week))
+
+    # read week
+    if week is None:
+        try:
+            week = int(request.args.get("week") or 1)
+        except Exception:
+            week = 1
+    week = max(1, min(4, int(week)))
 
     db = get_db()
-    row = db.execute("SELECT id, username, created_at, payload FROM career_worksheets WHERE id=?", (ws_id,)).fetchone()
-    if not row or row["username"] != username:
+    # worksheet ownership check
+    ws = db.execute(
+        "SELECT id, username, created_at, payload FROM career_worksheets WHERE id=?",
+        (ws_id,)
+    ).fetchone()
+    if not ws or ws["username"] != username:
         flash("Worksheet not found.", "danger")
         return redirect(url_for("career"))
 
-    unlocks = compute_week_unlocks(row["created_at"], weeks=4)
+    # locked check
+    unlocks = compute_week_unlocks(ws["created_at"], weeks=4)
     st = next(s for s in unlocks if s["week"] == week)
     if not st["is_unlocked"]:
         flash(f"Week {week} is locked until { _fmt_kst(st['unlock_at']) }.", "warning")
         return redirect(url_for("career_overview", ws_id=ws_id))
 
-    # ... your grading logic here ...
-    flash(f"Week {week} submitted.", "success")
+    # ===== Collect answers from form =====
+    answers = {
+        "comprehension": [],  # comp_0, comp_1, ...
+        "mcq": [],            # mcq_0, mcq_1, ... (store chosen index)
+        "short": [],          # short_0, ...
+        "writing": []         # long_0, ...
+    }
+    # Comprehension
+    for k, v in request.form.items():
+        if k.startswith("comp_"):
+            idx = int(k.split("_", 1)[1])
+            answers["comprehension"].append({"index": idx, "answer": v.strip()})
+    # MCQ
+    for k, v in request.form.items():
+        if k.startswith("mcq_"):
+            idx = int(k.split("_", 1)[1])
+            chosen = None
+            try:
+                chosen = int(v)
+            except Exception:
+                chosen = None
+            answers["mcq"].append({"index": idx, "chosen": chosen})
+    # Short blanks
+    for k, v in request.form.items():
+        if k.startswith("short_"):
+            idx = int(k.split("_", 1)[1])
+            answers["short"].append({"index": idx, "answer": v.strip()})
+    # Writing
+    for k, v in request.form.items():
+        if k.startswith("long_"):
+            idx = int(k.split("_", 1)[1])
+            answers["writing"].append({"index": idx, "text": v.strip()})
+
+    answers_json = json.dumps(answers, ensure_ascii=False)
+
+    # ===== Upsert into career_submissions =====
+    # Ensure the unique index on (worksheet_id, username, week) exists.
+    try:
+        existing = db.execute("""
+            SELECT id FROM career_submissions
+            WHERE worksheet_id=? AND username=? AND week=?
+            LIMIT 1
+        """, (ws_id, username, week)).fetchone()
+
+        if existing:
+            # Update answers and refresh submitted_at (keep any existing review fields)
+            db.execute("""
+                UPDATE career_submissions
+                   SET answers_json   = ?,
+                       submitted_at   = datetime('now')
+                 WHERE id = ?
+            """, (answers_json, existing["id"]))
+        else:
+            db.execute("""
+                INSERT INTO career_submissions
+                  (worksheet_id, username, week, answers_json, submitted_at)
+                VALUES (?,?,?,?, datetime('now'))
+            """, (ws_id, username, week, answers_json))
+
+        db.commit()
+    except sqlite3.OperationalError as e:
+        # Helpful message if schema is missing
+        flash(f"DB schema issue: {e}. Did you add worksheet_id and the table/index?", "danger")
+        return redirect(url_for("career_view", ws_id=ws_id, week=week))
+
+    flash(f"Week {week} submitted. You’ll see 'Reviewing…' on the overview.", "success")
     return redirect(url_for("career_overview", ws_id=ws_id))
+
+
+from flask import abort
+# ===== Admin: save review (used by the Review modal) =====
+@app.post("/admin/review/<int:submission_id>")
+def admin_review_save(submission_id: int):
+    if "username" not in session:
+        return jsonify({"error": "auth required"}), 401
+    # if not is_admin(): return jsonify({"error": "forbidden"}), 403
+
+    data = request.get_json(silent=True) or {}
+    try:
+        score = int(data.get("score", 0))
+    except Exception:
+        score = 0
+    comment = (data.get("comment") or "").strip()
+    per_item = data.get("per_item_feedback") or []  # list[{index:int, comment:str}]
+
+    db = get_db()
+    db.execute(
+        """
+        UPDATE career_submissions
+           SET review_score = ?,
+               review_comment = ?,
+               review_item_json = ?,
+               reviewed_at = datetime('now')
+         WHERE id = ?
+        """,
+        (score, comment, json.dumps(per_item, ensure_ascii=False), submission_id),
+    )
+    db.commit()
+    return jsonify({"ok": True})
+
+@app.get("/admin/career/<int:ws_id>/week/<int:week>")
+def admin_review_list(ws_id, week):
+    if "username" not in session or not is_admin():
+        abort(403)
+    db = get_db()
+
+    # Worksheet meta (owner, job, etc.)
+    ws = db.execute("SELECT id, username, job, level, created_at FROM career_worksheets WHERE id=?", (ws_id,)).fetchone()
+    if not ws:
+        flash("Worksheet not found.", "danger")
+        return redirect(url_for("home"))
+
+    # All submissions for this ws_id + week
+    subs = db.execute("""
+SELECT
+  s.id AS submission_id,
+  s.username,
+  s.submitted_at,
+  COALESCE(r.score,       s.review_score)   AS score,
+  COALESCE(r.comment,     s.review_comment) AS comment,
+  COALESCE(r.reviewed_at, s.reviewed_at)    AS reviewed_at
+FROM career_submissions s
+LEFT JOIN career_reviews r ON r.submission_id = s.id
+WHERE s.worksheet_id = ? AND s.week = ?
+ORDER BY s.submitted_at DESC
+    """, (ws_id, week)).fetchall()
+
+    return render_template("admin_career_review.html",
+                           ws=ws, week=week, subs=subs)
+
+@app.post("/admin/career/review/<int:submission_id>")
+def admin_save_review(submission_id):
+    if "username" not in session or not is_admin():
+        abort(403)
+    reviewer = session["username"]
+    score = request.form.get("score", "").strip()
+    comment = request.form.get("comment", "").strip()
+
+    try:
+        score_int = int(score)
+        if not (0 <= score_int <= 100):
+            raise ValueError
+    except Exception:
+        flash("Score must be an integer 0–100.", "warning")
+        return redirect(request.referrer or url_for("home"))
+
+    db = get_db()
+    # Ensure submission exists
+    sub = db.execute("SELECT id, ws_id, week FROM career_submissions WHERE id=?", (submission_id,)).fetchone()
+    if not sub:
+        flash("Submission not found.", "danger")
+        return redirect(url_for("home"))
+
+    db.execute("""
+      INSERT INTO career_reviews(submission_id, reviewer, score, comment)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(submission_id) DO UPDATE SET
+        reviewer=excluded.reviewer,
+        score=excluded.score,
+        comment=excluded.comment,
+        reviewed_at=CURRENT_TIMESTAMP
+    """, (submission_id, reviewer, score_int, comment))
+    db.commit()
+
+    flash("Review saved.", "success")
+    return redirect(url_for("admin_review_list", ws_id=sub["ws_id"], week=sub["week"]))
+
 # Go to the most recent worksheet's overview, or to the generator form if none exist
 @app.get("/career/latest")
 def career_latest():
@@ -4451,7 +5150,6 @@ def _normalize_bool(x):
 
 # === (C) LLM or heuristic quiz generator for a story ===
 # We’ll generate 8 Qs: 6 MCQ + 2 LONG (open answer; correctness = contains all required words)
-from flask import current_app
 def generate_story_quiz_from_text(story_title: str, story_text: str) -> dict:
     """
     Returns:
@@ -4481,8 +5179,7 @@ def generate_story_quiz_from_text(story_title: str, story_text: str) -> dict:
 
     # -------- GPT ROUTE ----------
     try:
-        from openai import OpenAI
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        client = OpenAI(api_key=OPENAI_API_KEY)
 
         clean_story = story_text[:12000]  # safety cutoff
 
@@ -4856,6 +5553,125 @@ def api_story_quiz_submit_slug(slug):
     db.commit()
 
     return jsonify({"score": correct, "total": total, "passed": passed, "xp_awarded": award})
+from flask import jsonify
+
+# ===== Admin: fetch one submission as JSON for the modals =====
+@app.get("/admin/submission/<int:submission_id>/json")
+def admin_submission_json(submission_id: int):
+    # (optional) guard
+    if "username" not in session:
+        return jsonify({"error": "auth required"}), 401
+    # if you want to restrict to admins only:
+    # if not is_admin(): return jsonify({"error":"forbidden"}), 403
+
+    db = get_db()
+    s = db.execute(
+        """
+        SELECT id, worksheet_id, username, week,
+               submitted_at, answers_json, review_score, review_comment, reviewed_at, review_item_json
+        FROM career_submissions
+        WHERE id=?
+        """,
+        (submission_id,),
+    ).fetchone()
+    if not s:
+        return jsonify({"error": "submission not found"}), 404
+
+    # Load the worksheet template for this submission (to reconstruct questions/prompts)
+    ws = db.execute(
+        "SELECT id, payload FROM career_worksheets WHERE id=?",
+        (s["worksheet_id"],),
+    ).fetchone()
+    if not ws:
+        return jsonify({"error": "worksheet not found"}), 404
+
+    try:
+        payload = json.loads(ws["payload"] or "{}")
+    except Exception:
+        payload = {}
+
+    week = int(s["week"])
+    weeks = payload.get("weeks", [])
+    if not (1 <= week <= len(weeks)):
+        return jsonify({"error": "week out of range"}), 400
+
+    tmpl = weeks[week - 1] or {}
+    # student answers
+    try:
+        ans = json.loads(s["answers_json"] or "{}")
+    except Exception:
+        ans = {}
+
+    # Build sections for the viewer modal
+    sections = []
+
+    # Reading (template only)
+    if tmpl.get("reading"):
+        sections.append({
+            "type": "reading",
+            "text": tmpl.get("reading", "")
+        })
+
+    # MCQ
+    if tmpl.get("mcq"):
+        mcq_items = []
+        # map answers by index for convenience
+        mcq_ans = {a.get("index"): a.get("chosen") for a in (ans.get("mcq") or [])}
+        for idx, item in enumerate(tmpl.get("mcq", [])):
+            mcq_items.append({
+                "prompt": item.get("prompt", ""),
+                "options": item.get("options", []),
+                # include correctness if stored in template; otherwise omit/null
+                "correct_index": item.get("correct_index"),
+                "chosen": mcq_ans.get(idx, None),
+            })
+        sections.append({"type": "mcq", "items": mcq_items})
+
+    # Short blanks
+    if tmpl.get("short"):
+        short_items = []
+        short_ans = {a.get("index"): a.get("answer") for a in (ans.get("short") or [])}
+        for idx, item in enumerate(tmpl.get("short", [])):
+            short_items.append({
+                "prompt": item.get("prompt", ""),
+                "answer": short_ans.get(idx, "")
+            })
+        sections.append({"type": "short", "items": short_items})
+
+    # Writing
+    if tmpl.get("writing"):
+        writing_items = []
+        long_ans = {a.get("index"): a.get("text") for a in (ans.get("writing") or [])}
+        for idx, item in enumerate(tmpl.get("writing", [])):
+            writing_items.append({
+                "prompt": item.get("prompt", ""),
+                "required_words": item.get("required_words", []),
+                "text": long_ans.get(idx, "")
+            })
+        sections.append({"type": "writing", "items": writing_items})
+
+    # Response payload
+    out = {
+        "submission_id": s["id"],
+        "worksheet_id": s["worksheet_id"],
+        "username": s["username"],
+        "week": week,
+        "submitted_at": s["submitted_at"],
+        "review": {
+            "score": s["review_score"],
+            "comment": s["review_comment"],
+            "reviewed_at": s["reviewed_at"],
+            "per_item": None
+        },
+        "sections": sections
+    }
+    # optional per-item review JSON if you saved it
+    try:
+        out["review"]["per_item"] = json.loads(s["review_item_json"]) if s["review_item_json"] else None
+    except Exception:
+        out["review"]["per_item"] = None
+
+    return jsonify(out)
 
 # -------------------- Main --------------------
 if __name__ == "__main__":
