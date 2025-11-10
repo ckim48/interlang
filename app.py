@@ -4452,83 +4452,126 @@ def _normalize_bool(x):
 # === (C) LLM or heuristic quiz generator for a story ===
 # We’ll generate 8 Qs: 6 MCQ + 2 LONG (open answer; correctness = contains all required words)
 from flask import current_app
-
 def generate_story_quiz_from_text(story_title: str, story_text: str) -> dict:
     """
-    Returns: {"mcq":[{id,prompt,options,answer_index}], "long":[{id,prompt,required_words,hint}]}
+    Returns:
+      { "mcq":[ {id,prompt,options[4],answer_index} ] }
+    Produces 8 high-quality reading-comprehension MCQs for kids.
     """
-    # Fallback simple heuristic if no API key or call fails
+
+    # -------- TRIVIAL FALLBACK (no GPT) ----------
     def trivial(text):
-        sent = (text or "").split(".")
-        base = [s.strip() for s in sent if len(s.strip().split()) >= 5][:6]
+        sents = [s.strip() for s in re.split(r"[.!?]", text or "") if len(s.strip().split()) >= 4]
         mcq = []
-        for i, s in enumerate(base[:6]):
-            # crude keyword -> option set
-            kw = (s.split()[0] if s else "story").strip(",.")
+        for i, s in enumerate(sents[:8]):
             mcq.append({
                 "id": f"m{i+1}",
-                "prompt": f"What is a key word from this sentence? “{s}”",
-                "options": [kw.lower(), "blue", "yesterday", "banana"],
-                "answer_index": 0,
-                "hint": "Scan the sentence."
+                "prompt": f"What is something that happens in this part of the story?\n“{s}”",
+                "options": ["It is mentioned", "It is not mentioned", "It is the opposite", "I don’t know"],
+                "answer_index": 0
             })
-        longq = []
-        longq.append({
-            "id": "l1",
-            "prompt": "Write one short sentence about the story that includes ALL these words.",
-            "required_words": ["the", "story"],
-            "hint": "Keep it simple."
-        })
-        longq.append({
-            "id": "l2",
-            "prompt": "Write a sentence about the main character using ALL these words.",
-            "required_words": ["is", "in"],
-            "hint": "Very short is OK."
-        })
-        return {"mcq": mcq, "long": longq}
+        while len(mcq) < 8:
+            mcq.append({
+                "id": f"m{len(mcq)+1}",
+                "prompt": "What is true according to the story?",
+                "options": ["A detail from the story", "Not in story", "Wrong detail", "Random guess"],
+                "answer_index": 0
+            })
+        return {"mcq": mcq}
 
-    # Try LLM if configured
+    # -------- GPT ROUTE ----------
     try:
-        import openai
-        openai.api_key = OPENAI_API_KEY
-        sys_msg = "You create short reading-comprehension quizzes for young ESL learners."
-        user_payload = {
-            "task": "Make 8 questions about the story text.",
-            "counts": {"mcq": 6, "long": 2},
-            "rules": [
-                "MCQ: exactly 4 options and the correct answer_index.",
-                "LONG: open question but grade as CORRECT iff the answer contains ALL required_words.",
-                "Use only words/concepts present or directly implied by the story.",
-                "Return ONLY JSON: {mcq:[...], long:[...]}. No markdown."
-            ],
-            "story_title": story_title or "",
-            "story_text": story_text or "",
-            "schemas": {
-                "mcq_item": {"id":"string","prompt":"string","options":["string","string","string","string"],"answer_index":"int","hint":"string"},
-                "long_item":{"id":"string","prompt":"string","required_words":["string"],"hint":"string"}
-            }
-        }
-        resp = openai.ChatCompletion.create(
-            model=os.getenv("OPENAI_MODEL","gpt-4o-mini"),
-            messages=[{"role":"system","content":sys_msg},
-                      {"role":"user","content":json.dumps(user_payload, ensure_ascii=False)}],
-            temperature=0.3
+        from openai import OpenAI
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+        clean_story = story_text[:12000]  # safety cutoff
+
+        system_msg = (
+            "You are a professional ESL reading-comprehension quiz generator for young learners. "
+            "You must make questions based ONLY on the story text. "
+            "NO outside knowledge. Keep English simple. "
+            "Each question should ask about characters, events, setting, feelings, or simple details."
         )
-        txt = resp["choices"][0]["message"]["content"]
-        data = json.loads(re.search(r"\{(?:[^{}]|(?R))*\}", txt, flags=re.S).group(0))
-        # light validation
-        mcq = [m for m in (data.get("mcq") or []) if isinstance(m, dict) and
-               isinstance(m.get("prompt"), str) and isinstance(m.get("options"), list) and len(m["options"])==4 and isinstance(m.get("answer_index"), int)]
-        longq = [l for l in (data.get("long") or []) if isinstance(l, dict) and
-                 isinstance(l.get("required_words"), list) and 1 <= len(l["required_words"]) <= 4]
-        # assign ids if missing
-        for i,m in enumerate(mcq[:6],1): m.setdefault("id", f"m{i}")
-        for i,l in enumerate(longq[:2],1): l.setdefault("id", f"l{i}")
-        if len(mcq) >= 6 and len(longq) >= 2:
-            return {"mcq": mcq[:6], "long": longq[:2]}
+
+        user_msg = f"""
+Create **exactly 8 multiple-choice reading-comprehension questions** for the following story.
+
+Rules:
+- EACH question must be answerable from the story.
+- NO keyword questions. NO extract-the-first-word. NO grammar questions.
+- Ask about story events, what characters do, who they are, where things happen,
+  what objects appear, or why something happens.
+- Difficulty: for 6–10 year-old ESL students.
+- 4 options per question.
+- One correct answer.
+- Keep prompts very short (1–2 sentences max).
+- Return ONLY JSON matching this schema:
+
+{{
+  "mcq":[
+    {{
+      "id":"m1",
+      "prompt":"string",
+      "options":["A","B","C","D"],
+      "answer_index": 0
+    }},
+    ...
+  ]
+}}
+
+Story Title: {story_title}
+
+Story Text:
+\"\"\"
+{clean_story}
+\"\"\"
+        """
+
+        resp = client.chat.completions.create(
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            temperature=0.4,
+            messages=[
+                {"role":"system","content":system_msg},
+                {"role":"user","content":user_msg},
+            ],
+            response_format={"type":"json_object"}
+        )
+
+        data = json.loads(resp.choices[0].message.content)
+        mcq = data.get("mcq") or []
+
+        # validate
+        final = []
+        for i, q in enumerate(mcq):
+            opts = q.get("options", [])
+            if not (isinstance(opts, list) and len(opts) == 4):
+                continue
+            ai = q.get("answer_index")
+            if ai is None or not (0 <= ai < 4):
+                continue
+            final.append({
+                "id": f"m{i+1}",
+                "prompt": q.get("prompt","").strip(),
+                "options": [str(o) for o in opts],
+                "answer_index": int(ai)
+            })
+
+        # pad if less than 8 (rare)
+        while len(final) < 8:
+            k = len(final) + 1
+            final.append({
+                "id": f"m{k}",
+                "prompt": "What is true according to the story?",
+                "options": ["A story detail", "Not in story", "Wrong", "Random"],
+                "answer_index": 0
+            })
+
+        return {"mcq": final[:8]}
+
+    except Exception as e:
+        print("GPT quiz error:", e)
         return trivial(story_text)
-    except Exception:
-        return trivial(story_text)
+
 # === (D) Routes: fetch quiz for a story and submit answers ===
 
 @app.route("/api/story/<slug>/quiz", methods=["GET"])
@@ -4606,23 +4649,30 @@ def _user_required():
     if "username" not in session:
         return None, (jsonify({"error":"auth required"}), 401)
     return session["username"], None
-
-def _load_saved_quiz(db, username, slug):
+def _load_saved_quiz(db, username: str, slug: str):
     row = db.execute(
-        "SELECT quiz_json FROM StoryQuizzes WHERE username=? AND story_slug=?",
+        "SELECT quiz_json, created_at FROM StoryQuizzes WHERE username=? AND story_slug=?",
         (username, slug)
     ).fetchone()
-    return json.loads(row["quiz_json"]) if row else None
+    if not row:
+        return None, None
+    try:
+        return json.loads(row["quiz_json"]), row["created_at"]
+    except Exception:
+        return None, row["created_at"]
 
-def _save_quiz(db, username, slug, quiz_obj):
-    js = json.dumps(quiz_obj, ensure_ascii=False)
-    db.execute("""
+def _save_quiz(db, username: str, slug: str, quiz: dict):
+    db.execute(
+        """
         INSERT INTO StoryQuizzes(username, story_slug, quiz_json)
         VALUES(?,?,?)
-        ON CONFLICT(username,story_slug)
+        ON CONFLICT(username, story_slug)
         DO UPDATE SET quiz_json=excluded.quiz_json, created_at=CURRENT_TIMESTAMP
-    """, (username, slug, js))
+        """,
+        (username, slug, json.dumps(quiz, ensure_ascii=False))
+    )
     db.commit()
+
 
 def _latest_status(db, username, slug):
     att = db.execute("""
@@ -4640,12 +4690,24 @@ def _latest_status(db, username, slug):
         "xp": 0
     }
     return st
+
 @app.get("/api/story_quiz/<slug>/status")
 def api_story_quiz_status(slug):
     username, err = _user_required()
     if err: return err
     db = get_db()
-    return jsonify(_latest_status(db, username, slug))
+    row = db.execute(
+        """
+        SELECT score, total, passed, xp, created_at
+          FROM StoryQuizAttempts
+         WHERE username=? AND story_slug=?
+         ORDER BY id DESC LIMIT 1
+        """, (username, slug)
+    ).fetchone()
+    if not row:
+        return jsonify({"state": "not_started"})
+    state = "passed" if row["passed"] else "failed"
+    return jsonify({"state": state, "score": row["score"], "total": row["total"], "xp": row["xp"]})
 
 # (Optional) allow client to POST a simple status blob after local grade
 @app.post("/api/story_quiz/<slug>/status")
@@ -4669,32 +4731,67 @@ def api_story_quiz_get(slug):
     username, err = _user_required()
     if err: return err
     db = get_db()
-    q = _load_saved_quiz(db, username, slug)
-    if not q:
-        return jsonify({"error":"not_found"}), 404
-    return jsonify(q)
-
+    quiz, created_at = _load_saved_quiz(db, username, slug)
+    if not quiz:
+        return jsonify({"error": "not_found"}), 404
+    return jsonify({"quiz": quiz, "created_at": created_at})
 @app.post("/api/story_quiz/<slug>/generate")
 def api_story_quiz_generate(slug):
+    """
+    Generates quiz only if not cached, unless force=true is sent.
+    Body (optional): { "title": "...", "content": "...", "force": true/false }
+    """
     username, err = _user_required()
     if err: return err
-    # Accept optional {title, content} from client; if missing, fall back to trivial gen.
+
     payload = request.get_json(silent=True) or {}
-    title = (payload.get("title") or request.args.get("title") or "").strip()
+    force = bool(payload.get("force") or request.args.get("force") == "true")
+    title   = (payload.get("title")   or request.args.get("title")   or "").strip()
     content = (payload.get("content") or request.args.get("content") or "").strip()
 
-    # Reuse your existing generator:
-    # - You already have generate_story_quiz_from_text(title, content) in app.py.
-    quiz = generate_story_quiz_from_text(title, content)  # safe fallback to trivial inside
-    # Ensure fields used by the front-end exist
+    db = get_db()
+
+    # 1) Cache-first (skip if force)
+    if not force:
+        cached, _created = _load_saved_quiz(db, username, slug)
+        if cached:
+            # Ensure keys for front-end
+            cached.setdefault("mcq", [])
+            cached.setdefault("short", [])
+            cached.setdefault("long", [])
+            return jsonify(cached)
+
+    # 2) Generate afresh (your existing generator; returns {"mcq":[], "short":[], "long":[]})
+    quiz = generate_story_quiz_from_text(title, content)
     quiz.setdefault("mcq", [])
     quiz.setdefault("short", [])
     quiz.setdefault("long", [])
 
-    db = get_db()
+    # 3) Save
     _save_quiz(db, username, slug, quiz)
+
     return jsonify(quiz)
 
+
+@app.post("/api/story_quiz/<slug>/status")
+def api_story_quiz_status_post(slug):
+    username, err = _user_required()
+    if err: return err
+    payload = request.get_json(silent=True) or {}
+    score = int(payload.get("score") or 0)
+    total = int(payload.get("total") or 0)
+    passed = 1 if payload.get("state") == "passed" else 0
+    xp = int(payload.get("xp") or 0)
+    db = get_db()
+    db.execute(
+        "INSERT INTO StoryQuizAttempts(username, story_slug, score, total, passed, xp) VALUES(?,?,?,?,?,?)",
+        (username, slug, score, total, passed, xp)
+    )
+    # also bump user XP if you track it
+    if xp > 0:
+        db.execute("UPDATE users SET xp = COALESCE(xp,0) + ? WHERE username=?", (xp, username))
+    db.commit()
+    return jsonify({"ok": True})
 @app.post("/api/story_quiz/<slug>/submit")
 def api_story_quiz_submit_slug(slug):
     """

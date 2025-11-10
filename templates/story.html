@@ -117,7 +117,7 @@
 
     /* ===== Dictionary sheet (below navbar) ===== */
     .dict-sheet{
-      position: fixed; top: calc(var(--nav-h) + 10px); right: -440px;
+      position: fixed; top: calc(var(--nav-h) + 25px); right: -440px;
       width: 440px; max-width: 96%;
       height: calc(100vh - (var(--nav-h) + 10px));
       background: linear-gradient(180deg,#ffffff,#fffaf3);
@@ -593,237 +593,287 @@
     function getBookmarkVisual(btn){ return (btn?.dataset.state === 'on'); }
 
     /* ===== Story Quiz (7 MCQ only) ===== */
-    const quizModal = document.getElementById('quiz-modal');
-    const openQuizBtn = document.getElementById('open-quiz');
-    const closeQuizBtn = document.getElementById('quiz-close');
-    const quizListEl = document.getElementById('quiz-list');
-    const quizRegenBtn = document.getElementById('quiz-regenerate');
-    const quizSubmitBtn = document.getElementById('quiz-submit');
-    const quizMetaEl = document.getElementById('quiz-meta');
-    const quizProgressEl = document.getElementById('quiz-progress');
-    const quizResultEl = document.getElementById('quiz-result');
-    const quizStatusPill = document.getElementById('quiz-status-pill');
-    const quizAlert = document.getElementById('quiz-alert');
+const quizModal       = document.getElementById('quiz-modal');
+const openQuizBtn     = document.getElementById('open-quiz');
+const closeQuizBtn    = document.getElementById('quiz-close');
+const quizListEl      = document.getElementById('quiz-list');
+const quizRegenBtn    = document.getElementById('quiz-regenerate');
+const quizSubmitBtn   = document.getElementById('quiz-submit');
+const quizMetaEl      = document.getElementById('quiz-meta');
+const quizProgressEl  = document.getElementById('quiz-progress');
+const quizResultEl    = document.getElementById('quiz-result');
+const quizStatusPill  = document.getElementById('quiz-status-pill');
+const quizAlert       = document.getElementById('quiz-alert');
 
-    let quizData = null;
-    const TARGET_MCQ = 7;
+let quizData = { mcq: [] };
+const TARGET_MCQ = 8;
 
-    function lsKey(slug){ return `story:${slug}:quiz_status`; }
-    function lsLoad(slug){
-      try{ return JSON.parse(localStorage.getItem(lsKey(slug))||'null'); }catch(_){ return null; }
+/* ---------- Status pill (server-backed, local fallback) ---------- */
+function lsKey(slug){ return `story:${slug}:quiz_status`; }
+function lsLoad(slug){ try{ return JSON.parse(localStorage.getItem(lsKey(slug))||'null'); }catch(_){ return null; } }
+function lsSave(slug, obj){ try{ localStorage.setItem(lsKey(slug), JSON.stringify(obj)); }catch(_){} }
+
+function setStatusPill(status){
+  let text = 'Quiz: not started', cls='neutral';
+  if (!status || status.state==='not_started'){ text='Quiz: not started'; cls='neutral'; }
+  else if (status.state==='in_progress'){ text='Quiz: in progress'; cls='neutral'; }
+  else if (status.state==='passed'){ text=`Quiz: Passed (${status.score}/${status.total})`; cls='ok'; }
+  else if (status.state==='failed'){ text=`Quiz: Try again (${status.score}/${status.total})`; cls='bad'; }
+  quizStatusPill.textContent = text;
+  quizStatusPill.className = 'pill ' + (cls==='ok' ? 'ok' : cls==='bad' ? 'bad' : 'neutral');
+}
+
+async function fetchStatus(){
+  try{
+    const r = await fetch(`/api/story_quiz/${encodeURIComponent(storySlug)}/status`, { headers:{'Accept':'application/json'} });
+    if (r.ok){
+      const s = await r.json();
+      if (s && s.state){ setStatusPill(s); return s; }
     }
-    function lsSave(slug, obj){
-      try{ localStorage.setItem(lsKey(slug), JSON.stringify(obj)); }catch(_){}
-    }
+  }catch(_){}
+  const local = lsLoad(storySlug) || {state:'not_started'};
+  setStatusPill(local);
+  return local;
+}
 
-    function setStatusPill(status){
-      let text = 'Quiz: not started', cls='neutral';
-      if (!status || status.state==='not_started'){ text='Quiz: not started'; cls='neutral'; }
-      else if (status.state==='in_progress'){ text='Quiz: in progress'; cls='neutral'; }
-      else if (status.state==='passed'){ text=`Quiz: Passed (${status.score}/${status.total})`; cls='ok'; }
-      else if (status.state==='failed'){ text=`Quiz: Try again (${status.score}/${status.total})`; cls='bad'; }
-      quizStatusPill.textContent = text;
-      quizStatusPill.className = 'pill ' + (cls==='ok' ? 'ok' : cls==='bad' ? 'bad' : 'neutral');
-    }
+/* ---------- Quality guards to avoid trivial/irrelevant MCQs ---------- */
+function normalizeStr(s){ return String(s||'').replace(/\s+/g,' ').trim(); }
+function looksLikeBadPrompt(p){
+  const s = normalizeStr(p).toLowerCase();
+  if (/which word appears|key word from this sentence|which of these is an english word/.test(s)) return true;
+  if (/^title\s*:/.test(s)) return true;
+  if (s.length < 20) return true;
+  return false;
+}
+function ensureFourOptions(m){
+  const opts = Array.isArray(m.options) ? m.options.slice(0,4) : [];
+  while (opts.length < 4) opts.push('—');
+  const ai = (Number.isInteger(m.answer_index) && m.answer_index>=0 && m.answer_index<opts.length) ? m.answer_index : 0;
+  return {...m, options: opts, answer_index: ai};
+}
+function dedupeMcq(list){
+  const seen = new Set(); const out=[];
+  for (const m of list){
+    const k = normalizeStr(m.prompt)+'|'+normalizeStr((m.options||[]).join('|'));
+    if (!seen.has(k)){ seen.add(k); out.push(m); }
+  }
+  return out;
+}
+function qualityFilter(mcq){
+  const cleaned = mcq
+    .filter(m => m && normalizeStr(m.prompt).length > 0)
+    .map(ensureFourOptions)
+    .filter(m => !looksLikeBadPrompt(m.prompt));
+  return dedupeMcq(cleaned);
+}
 
-    async function fetchStatus(){
-      try{
-        const r = await fetch(`/api/story_quiz/${encodeURIComponent(storySlug)}/status`, { headers:{'Accept':'application/json'} });
-        if (r.ok){
-          const s = await r.json();
-          if (s && s.state){ setStatusPill(s); return s; }
-        }
-      }catch(_){}
-      const local = lsLoad(storySlug) || {state:'not_started'};
-      setStatusPill(local);
-      return local;
-    }
+/* ---------- Emergency local synthesis (last resort) ---------- */
+function emergencySynthesize(text){
+  const sents = (text||'').split(/(?<=[.!?])\s+/).filter(x => x.trim().split(/\s+/).length >= 6);
+  const out = [];
+  for (let i=0; i<sents.length && out.length<TARGET_MCQ; i++){
+    const sent = sents[i].trim();
+    out.push({
+      id: `m_synth_${i+1}`,
+      prompt: `Which statement best reflects this part of the story: “${sent}”?`,
+      options: [
+        'It describes an actual event in the story',
+        'It is unrelated to the plot',
+        'It lists vocabulary words',
+        'It shows publishing details'
+      ],
+      answer_index: 0
+    });
+  }
+  while(out.length<TARGET_MCQ){
+    out.push({
+      id: `m_auto_${out.length+1}`,
+      prompt: 'Which option is most consistent with the story’s plot and characters?',
+      options: ['A plausible story detail', 'A random brand name', 'An equation only', 'Random letters'],
+      answer_index: 0
+    });
+  }
+  return out;
+}
 
-    function openQuiz(){
-      quizModal.classList.add('open'); quizModal.setAttribute('aria-hidden','false');
-      quizResultEl.style.display='none';
-      quizMetaEl.textContent = 'Loading…';
-      quizAlert.textContent = 'Answer all questions, then Submit.';
-      generateSevenMCQ();
-    }
-    function closeQuiz(){
-      quizModal.classList.remove('open'); quizModal.setAttribute('aria-hidden','true');
-    }
-    openQuizBtn.addEventListener('click', openQuiz);
-    closeQuizBtn.addEventListener('click', closeQuiz);
-    quizModal.addEventListener('click', (e)=>{ if(e.target===quizModal) closeQuiz(); });
-
-    // Heuristic fallback to synthesize MCQ from story text
-    function synthesizeMCQFromText(sent, idx){
-      const s = (sent||'').trim();
-      const kw = (s.split(/\s+/)[0] || 'story').replace(/[.,!?;:]/g,'').toLowerCase();
-      return {
-        id: `m_synth_${idx}`,
-        prompt: `Which word appears in this sentence? “${escapeHTML(s)}”`,
-        options: [kw, "blue", "yesterday", "banana"],
-        answer_index: 0
-      };
-    }
-
-    async function generateSevenMCQ(){
-      quizData = { mcq: [] };
-      quizListEl.innerHTML = `<div class="muted">Preparing questions…</div>`;
-      quizProgressEl.textContent = `0 / ${TARGET_MCQ}`;
-      setStatusPill({state:'in_progress'});
-
-      let base = null;
-      try{
-        const r = await fetch(`/api/story_quiz/${encodeURIComponent(storySlug)}/generate`, {
-          method:'POST',
-          headers:{'Content-Type':'application/json','Accept':'application/json'},
-          body: JSON.stringify({ title: storyTitle, content: rawContent })
-        });
-        if (r.ok){ base = await r.json(); }
-      }catch(_){}
-
-      const mcqSeed = (base && Array.isArray(base.mcq)) ? base.mcq.slice() : [];
-      while (mcqSeed.length > TARGET_MCQ) mcqSeed.pop();
-      if (mcqSeed.length < TARGET_MCQ){
-        const sentences = (rawContent||'').split(/(?<=[.!?])\s+/).filter(s => s.trim().split(/\s+/).length >= 5);
-        let si = 0;
-        while (mcqSeed.length < TARGET_MCQ && si < sentences.length){
-          mcqSeed.push(synthesizeMCQFromText(sentences[si++], mcqSeed.length+1));
-        }
-        while (mcqSeed.length < TARGET_MCQ){
-          mcqSeed.push({
-            id:`m_auto_${mcqSeed.length+1}`,
-            prompt:"Which of these is an English word?",
-            options:["story","zzqv","nmbt","xxxx"],
-            answer_index:0
-          });
-        }
+/* ---------- Cache-first loader: GET cache → POST generate (saved on server) ---------- */
+async function loadOrGenerateQuiz(force=false){
+  // 1) Try cache from DB
+  if (!force){
+    try{
+      const r0 = await fetch(`/api/story_quiz/${encodeURIComponent(storySlug)}/get`, { headers:{'Accept':'application/json'} });
+      if (r0.ok){
+        const j0 = await r0.json();
+        const base = j0.quiz || j0;
+        let mcq = qualityFilter(base.mcq || []);
+        if (mcq.length >= TARGET_MCQ) return mcq.slice(0, TARGET_MCQ);
       }
-      mcqSeed.forEach((m, i) => { if (!m.id) m.id = `m${i+1}`; });
-
-      quizData.mcq = mcqSeed;
-      renderQuiz();
-      quizMetaEl.textContent = 'Ready';
-      lsSave(storySlug, {state:'in_progress'});
-    }
-
-    quizRegenBtn.addEventListener('click', generateSevenMCQ);
-
-    function renderQuiz(){
-      const blocks = [];
-      (quizData.mcq||[]).forEach((it, idx) => {
-        const key = `mcq_${idx}`;
-        blocks.push(`
-          <div class="q-card" data-key="${key}">
-            <div class="q-type">Multiple Choice</div>
-            <div class="q-prompt">${escapeHTML(it.prompt||'')}</div>
-            <div class="opt-row">
-              ${(it.options||[]).map((o,i)=>`
-                <label class="opt"><input type="radio" name="${key}" value="${i}"> ${escapeHTML(o)}</label>
-              `).join('')}
-            </div>
-          </div>`);
-      });
-      quizListEl.innerHTML = blocks.join('') || '<div class="muted">No questions.</div>';
-      quizProgressEl.textContent = `${countAnswered()} / ${TARGET_MCQ}`;
-      quizResultEl.style.display='none';
-    }
-
-    function countAnswered(){
-      let c=0;
-      (quizData.mcq||[]).forEach((_,i)=>{ const v = document.querySelector(`input[name="mcq_${i}"]:checked`); if (v) c++; });
-      return Math.min(c, TARGET_MCQ);
-    }
-    function collectAnswers(){
-      const ans = {};
-      (quizData.mcq||[]).forEach((_,i)=>{ const key=`mcq_${i}`; const v=document.querySelector(`input[name="${key}"]:checked`); ans[key]= (v?parseInt(v.value,10):null); });
-      return ans;
-    }
-
-    /* Kid-friendly message generator */
-    function kidPraise(score, total){
-      const ratio = total ? score/total : 0;
-      if (score === total) {
-        return {
-          title: "Amazing work!",
-          sub: "You answered every question correctly. Keep that curiosity shining."
-        };
+    }catch(_){}
+  }
+  // 2) Generate via server (which stores into DB)
+  try{
+    const r = await fetch(`/api/story_quiz/${encodeURIComponent(storySlug)}/generate${force ? '?force=true' : ''}`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Accept':'application/json'},
+      body: JSON.stringify({ title: storyTitle, content: rawContent })
+    });
+    if (r.ok){
+      const base = await r.json();
+      let mcq = qualityFilter(base.mcq || []);
+      if (mcq.length < TARGET_MCQ && !force){
+        // one more try forcing regeneration
+        return await loadOrGenerateQuiz(true);
       }
-      if (ratio >= 6/7) {
-        return {
-          title: "Great job!",
-          sub: "You understood the story really well. One more try could make it perfect."
-        };
+      if (mcq.length < TARGET_MCQ){
+        mcq = mcq.concat(emergencySynthesize(rawContent)).slice(0, TARGET_MCQ);
       }
-      if (ratio >= 4/7) {
-        return {
-          title: "Nice try!",
-          sub: "You’re getting the hang of it. Re-read a page and try again."
-        };
-      }
-      return {
-        title: "You’re learning!",
-        sub: "Every try makes you stronger. Let’s review the story and give it another go."
-      };
+      return mcq.slice(0, TARGET_MCQ);
     }
+  }catch(_){}
+  // 3) Emergency local
+  return emergencySynthesize(rawContent);
+}
 
-    function gradeLocally(answers){
-      let correct = 0;
-      (quizData.mcq||[]).forEach((it,i)=>{
-        const a = answers[`mcq_${i}`];
-        if (typeof a === 'number' && a === it.answer_index) correct++;
-      });
-      const total = TARGET_MCQ;
-      const passed = total>0 ? (correct/total)>=0.8 : false;
-      return {score: correct, total, passed};
-    }
+/* ---------- Rendering & grading ---------- */
+function escapeHTML(s){
+  return (s||'').replace(/[&<>"'`=\/]/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;','/':'&#x2F;','`':'&#x60;','=':'&#x3D;'
+  }[c]));
+}
 
-    async function submitQuiz(){
-      const answers = collectAnswers();
-      if (countAnswered() < TARGET_MCQ){
-        quizAlert.textContent = 'Please answer all questions before submitting.';
-        return;
-      }
-      const res = gradeLocally(answers);
-      showResult(res.score, res.total, res.passed, res.passed?10:0);
-      setStatusPill({ state: res.passed?'passed':'failed', score:res.score, total:res.total });
+function renderQuiz(){
+  const blocks = [];
+  (quizData.mcq||[]).forEach((it, idx) => {
+    const key = `mcq_${idx}`;
+    blocks.push(`
+      <div class="q-card" data-key="${key}">
+        <div class="q-type">Multiple Choice</div>
+        <div class="q-prompt">${escapeHTML(it.prompt||'')}</div>
+        <div class="opt-row">
+          ${(it.options||[]).map((o,i)=>`
+            <label class="opt"><input type="radio" name="${key}" value="${i}"> ${escapeHTML(o)}</label>
+          `).join('')}
+        </div>
+      </div>`);
+  });
+  quizListEl.innerHTML = blocks.join('') || '<div class="muted">No questions.</div>';
+  quizProgressEl.textContent = `${countAnswered()} / ${TARGET_MCQ}`;
+  quizResultEl.style.display='none';
+}
 
-      try{
-        await fetch(`/api/story_quiz/${encodeURIComponent(storySlug)}/status`, {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ state: res.passed?'passed':'failed', score: res.score, total: res.total, xp: res.passed?10:0 })
-        });
-      }catch(_){}
-    }
+function countAnswered(){
+  let c=0;
+  (quizData.mcq||[]).forEach((_,i)=>{ const v = document.querySelector(`input[name="mcq_${i}"]:checked`); if (v) c++; });
+  return Math.min(c, TARGET_MCQ);
+}
+function collectAnswers(){
+  const ans = {};
+  (quizData.mcq||[]).forEach((_,i)=>{ const key=`mcq_${i}`; const v=document.querySelector(`input[name="${key}"]:checked`); ans[key]= (v?parseInt(v.value,10):null); });
+  return ans;
+}
 
-    function showResult(score, total, passed, xp){
-      quizResultEl.style.display='block';
-      const cls = passed ? 'ok' : 'bad';
-      const praise = kidPraise(score, total);
-      quizResultEl.innerHTML = `
-        <div class="q-card">
-          <div class="d-flex align-items-center justify-content-between">
-            <div>
-              <div class="q-prompt">Result</div>
-              <div>Score: <strong>${score}</strong> / ${total}</div>
-              <div>Status: <span class="pill ${cls}">${passed?'Passed':'Try again'}</span></div>
-              ${passed ? `<div class="mt-1">XP awarded: <strong>${xp||0}</strong></div>` : ``}
-            </div>
-          </div>
-          <div class="praise-card mt-2">
-            <div style="font-family:Fredoka; font-size:1.05rem;">${praise.title}</div>
-            <div class="praise-small">${praise.sub}</div>
-          </div>
-        </div>`;
-      quizProgressEl.textContent = `${score} / ${total}`;
-      quizMetaEl.textContent = passed ? 'Passed' : 'Submitted';
-    }
+function kidPraise(score, total){
+  const ratio = total ? score/total : 0;
+  if (score === total) return { title: "Amazing work!", sub: "Perfect score—your reading really shines." };
+  if (ratio >= 7/8)    return { title: "Great job!",     sub: "You understood most details correctly." };
+  if (ratio >= 5/8)    return { title: "Nice try!",       sub: "Review a page and try again." };
+  return                  { title: "You’re learning!",    sub: "Re-read the story and give it another go." };
+}
 
-    document.getElementById('quiz-list').addEventListener('input', ()=>{ quizProgressEl.textContent = `${countAnswered()} / ${TARGET_MCQ}`; });
-    document.getElementById('quiz-list').addEventListener('change', ()=>{ quizProgressEl.textContent = `${countAnswered()} / ${TARGET_MCQ}`; });
-    document.getElementById('quiz-submit').addEventListener('click', submitQuiz);
+function gradeLocally(answers){
+  let correct = 0;
+  (quizData.mcq||[]).forEach((it,i)=>{
+    const a = answers[`mcq_${i}`];
+    if (typeof a === 'number' && a === it.answer_index) correct++;
+  });
+  const total = TARGET_MCQ;
+  const passed = total>0 ? (correct/total)>=0.8 : false;
+  return {score: correct, total, passed};
+}
 
-    // Initialize status on load
-    fetchStatus();
+async function submitQuiz(){
+  const answers = collectAnswers();
+  if (countAnswered() < TARGET_MCQ){
+    quizAlert.textContent = 'Please answer all questions before submitting.';
+    return;
+  }
+  const res = gradeLocally(answers);
+  showResult(res.score, res.total, res.passed, res.passed?10:0);
+  setStatusPill({ state: res.passed?'passed':'failed', score:res.score, total:res.total });
+
+  try{
+    await fetch(`/api/story_quiz/${encodeURIComponent(storySlug)}/status`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ state: res.passed?'passed':'failed', score: res.score, total: res.total, xp: res.passed?10:0 })
+    });
+  }catch(_){}
+}
+
+function showResult(score, total, passed, xp){
+  quizResultEl.style.display='block';
+  const cls = passed ? 'ok' : 'bad';
+  const praise = kidPraise(score, total);
+  quizResultEl.innerHTML = `
+    <div class="q-card">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <div class="q-prompt">Result</div>
+          <div>Score: <strong>${score}</strong> / ${total}</div>
+          <div>Status: <span class="pill ${cls}">${passed?'Passed':'Try again'}</span></div>
+          ${passed ? `<div class="mt-1">XP awarded: <strong>${xp||0}</strong></div>` : ``}
+        </div>
+      </div>
+      <div class="praise-card mt-2">
+        <div style="font-family:Fredoka; font-size:1.05rem;">${praise.title}</div>
+        <div class="praise-small">${praise.sub}</div>
+      </div>
+    </div>`;
+  quizProgressEl.textContent = `${score} / ${total}`;
+  quizMetaEl.textContent = passed ? 'Passed' : 'Submitted';
+}
+
+/* ---------- Open / Close / Events ---------- */
+function openQuiz(){
+  quizModal.classList.add('open'); quizModal.setAttribute('aria-hidden','false');
+  quizResultEl.style.display='none';
+  quizMetaEl.textContent = 'Loading…';
+  quizAlert.textContent = 'Answer all questions, then Submit.';
+  (async ()=>{
+    setStatusPill({state:'in_progress'});
+    const mcq = await loadOrGenerateQuiz(false);
+    quizData.mcq = mcq.slice(0, TARGET_MCQ);
+    renderQuiz();
+    quizMetaEl.textContent = 'Ready';
+    lsSave(storySlug, {state:'in_progress'});
+  })();
+}
+function closeQuiz(){
+  quizModal.classList.remove('open'); quizModal.setAttribute('aria-hidden','true');
+}
+
+openQuizBtn.addEventListener('click', openQuiz);
+closeQuizBtn.addEventListener('click', closeQuiz);
+quizModal.addEventListener('click', (e)=>{ if(e.target===quizModal) closeQuiz(); });
+
+quizRegenBtn.addEventListener('click', async ()=>{
+  quizMetaEl.textContent = 'Regenerating…';
+  const mcq = await loadOrGenerateQuiz(true); // force server re-gen + save
+  quizData.mcq = mcq.slice(0, TARGET_MCQ);
+  renderQuiz();
+  quizMetaEl.textContent = 'Ready';
+});
+
+quizSubmitBtn.addEventListener('click', submitQuiz);
+
+document.getElementById('quiz-list').addEventListener('input', ()=>{
+  quizProgressEl.textContent = `${countAnswered()} / ${TARGET_MCQ}`;
+});
+document.getElementById('quiz-list').addEventListener('change', ()=>{
+  quizProgressEl.textContent = `${countAnswered()} / ${TARGET_MCQ}`;
+});
+
+/* Initialize pill on first load */
+fetchStatus();
   </script>
 </body>
 </html>
