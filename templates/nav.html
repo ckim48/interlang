@@ -87,6 +87,34 @@
       border:none; background:transparent; color:#223357; font-size:1.4rem;
     }
     .et-nav .navbar-toggler:focus{ box-shadow:none; }
+      #globalLoader {
+    position: fixed;
+    inset: 0;
+    display: none;
+    place-items: center;
+    background:#ffffffee;
+    backdrop-filter: blur(2px);
+    z-index: 99999;
+  }
+  #globalLoader .card {
+    border:1px solid #f0f2fb;
+    background:linear-gradient(180deg,#ffffff,#fbfcff);
+    padding:22px 24px;
+    border-radius:18px;
+    text-align:center;
+    box-shadow:0 16px 44px rgba(52,90,160,.12);
+    width:min(380px,90vw);
+  }
+  #globalLoader .spinner {
+    width:48px; height:48px;
+    margin:0 auto 10px;
+    border-radius:50%;
+    border:4px solid #e6ecff;
+    border-top-color:#7acbff;
+    border-right-color:#ff8db3;
+    animation:spin 1s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
   </style>
 
   {% set ep = (request.endpoint or '') %}
@@ -188,3 +216,38 @@
     </div>
   </div>
 </nav>
+
+<div id="globalLoader">
+  <div class="card">
+    <div class="spinner"></div>
+
+    <div class="loader-title" style="font-family:Fredoka;font-weight:900;color:#1f2b46;">
+      AI is preparing your EduTales…
+    </div>
+
+    <div class="loader-sub" style="color:#6e7494;font-weight:700;font-size:.9rem;margin-top:4px;">
+      Finding the best story content for you
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const loader = document.getElementById("globalLoader");
+
+  // When user clicks EduTales in navbar
+  const storiesLink = document.querySelector('a.nav-link[href="{{ url_for("stories") }}"]');
+
+  if (storiesLink) {
+    storiesLink.addEventListener("click", (e) => {
+      loader.style.display = "grid";
+    });
+  }
+
+  // If user navigates using "back" and page loads instantly via bfcache,
+  // ensure loader is hidden.
+  window.addEventListener("pageshow", (evt) => {
+    if (evt.persisted) loader.style.display = "none";
+  });
+});
+</script>

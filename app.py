@@ -2817,6 +2817,11 @@ def submit_quiz_instance(quiz_id):
         db.execute("""
             INSERT INTO quiz_answers(quiz_id, question_id, response, is_correct, awarded_xp)
             VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(quiz_id, question_id) DO UPDATE SET
+                response    = excluded.response,
+                is_correct  = excluded.is_correct,
+                awarded_xp  = excluded.awarded_xp,
+                created_at  = CURRENT_TIMESTAMP
         """, (quiz_id, qid, resp_text, is_correct, awarded_xp))
 
         total_correct += is_correct
@@ -4160,406 +4165,592 @@ def _simple_sentence(level:int, words:list[str]) -> str:
     if len(w) == 1: return f"I see a {w[0]}."
     if len(w) == 2: return f"The {w[0]} and {w[1]} work together."
     return f"The {w[0]} {random.choice(['help','protect','build','cook','drive','teach'])} the {w[1]} in the {w[2]}."
-def generate_career_worksheet_gpt_4w(job: str, level: int = 1, lang: str = "en") -> dict:
+def generate_career_worksheet_gpt_4w(job: str, level: int = 2) -> dict:
     """
-    Generate 4 weekly worksheets for the given job (police, firefighter, etc.).
-    Each week targets 40–60 minutes with:
-      - Reading: 140–200 words (short, clear sentences, A1–A2)
-      - Vocabulary: 8–10 target words [{word, meaning_ko, example_en}]
-      - Comprehension: 6 short-answer Qs [{q, a}]
-      - MCQ: 6 items (4 options, one correct)
-      - Short blanks: 4–6 one-word answers
-      - Writing: 2 prompts [{required_words: 3–5, prompt}]
+    Ask GPT to build a 4-week career worksheet plan for a given job.
+
+    Returns a dict with:
+    {
+      "weeks": [
+        {
+          "week": 1-4,
+          "title": str,
+          "reading": str,
+          "vocab": [
+            {"word": str, "meaning_ko": str, "example_en": str}, ...
+          ],
+          "comprehension": [{"q": str}, ...],
+          "mcq": [{"prompt": str, "options": [str, ...]}, ...],
+          "short": [{"prompt": str}, ...],
+          "writing": [{"prompt": str, "required_words": [str, ...]}, ...]
+        },
+        ...
+      ]
+    }
     """
-    import json, time, random
 
-    job = (job or "").strip()
-    level = max(1, min(int(level or 1), 5))
+    from openai import OpenAI
+    import json, re
 
-    sys = (
-        "You are generating four weekly kid-friendly English worksheets for Korean EFL elementary learners "
-        "(CEFR A1–A2), ages 7–12. Keep text concrete, short sentences, mostly present tense, and SAFE. "
-        "Return STRICT JSON only (no code fences)."
+    client = OpenAI(api_key=OPENAI_API_KEY)
+
+    # --- helper to aggressively clean repeated / filler sentences in reading ---
+    def _patch_reading(text: str) -> str:
+        if not isinstance(text, str):
+            return ""
+
+        # Collapse whitespace + join lines
+        text = " ".join(line.strip() for line in text.splitlines() if line.strip())
+        text = re.sub(r"\s+", " ", text).strip()
+
+        # Split into rough sentences
+        # (simple splitter is fine for this educational text)
+        chunks = re.split(r"(?<=[.!?])\s+", text)
+        cleaned = []
+        seen = set()
+
+        # Phrases to discard (case-insensitive)
+        bad_patterns = [
+            r"they\s+check\s+again.*next\s+step",
+            r"they\s+check\s+it\s+again.*next\s+step",
+            r"they\s+check\s+again",
+            r"they\s+do\s+the\s+next\s+step",
+        ]
+
+        for sent in chunks:
+            s = sent.strip()
+            if not s:
+                continue
+            lower = s.lower()
+            # filter clearly generic / boilerplate sentences
+            drop = False
+            if len(s.split()) <= 3:
+                drop = True
+            else:
+                for pat in bad_patterns:
+                    if re.search(pat, lower):
+                        drop = True
+                        break
+            if drop:
+                continue
+
+            # de-duplicate inside one passage
+            key = lower.strip(" .!?")
+            if key in seen:
+                continue
+            seen.add(key)
+            cleaned.append(s)
+
+        # Keep 4–8 sentences if possible
+        if not cleaned:
+            return text
+        if len(cleaned) > 8:
+            cleaned = cleaned[:8]
+        return " ".join(cleaned)
+
+    # Prompt: explicitly force *different* content per week
+    system_msg = (
+        "You are an English teacher making 4 weeks of worksheets for one job. "
+        "Each week must have different content. "
+        "Do NOT reuse the same sentences across weeks. "
+        "Avoid generic filler like 'They check again and do the next step.' "
+        "Use simple, clear English that matches the requested level."
     )
 
-    user = {
-        "job": job,
-        "level": level,
-        "lang": lang,
-        "shape": {
-            "weeks": 4,
-            "per_week": {
-                "reading_words": [140, 200],
-                "vocab_count": [8, 10],
-                "comprehension_q": 6,
-                "mcq": 6,
-                "short_blanks": [4, 6],
-                "writing_prompts": 2
-            },
-            "rules": [
-                "Short sentences (8–14 words).",
-                "Mostly present tense; avoid idioms and figurative language.",
-                "Add very short Korean glosses only when helpful.",
-                "Avoid violence, politics, religion, romance.",
-                "MCQs: exactly 4 options; exactly one correct.",
-                "Short blanks: a single best ONE-WORD answer; 1–3 alternates ok."
-            ],
-            "schema": {
-                "job": "lowercase string",
-                "level": "1..5",
-                "weeks": [{
-                    "week": "1..4 (number)",
-                    "title": "Week N • <topic>",
-                    "reading": "140–200 word string",
-                    "vocab": [{"word": "string", "meaning_ko": "string", "example_en": "string"}],
-                    "comprehension": [{"q": "string", "a": "short string"}],
-                    "mcq": [{"prompt": "string", "options": ["A","B","C","D"], "answer_index": 0}],
-                    "short": [{"prompt":"string with ONE blank","answer":"string","alternates":["optional", "..."]}],
-                    "writing": [{"required_words":["w1","w2","w3"], "prompt":"string"}]
-                }]
+    level_desc = {
+        1: "very easy: short sentences, simple present tense, CEFR A1.",
+        2: "easy: simple present and present continuous, CEFR A1-A2.",
+        3: "medium: some past tense and connectors, CEFR A2.",
+        4: "upper: mix of past/present, CEFR A2-B1.",
+        5: "challenge: slightly longer sentences, CEFR B1.",
+    }.get(level, "easy: simple present and present continuous, CEFR A1-A2.")
+
+    user_msg = f"""
+Job: "{job}"
+Student level: {level} ({level_desc})
+
+Design a 4-week English worksheet plan called CareerQuest.
+
+Constraints:
+- 4 distinct weeks. Do NOT copy the same sentences or the same vocabulary items across weeks.
+- Each week must have a different focus topic:
+
+  Week 1: Daily work & tools of a {job}.
+  Week 2: Places and people they work with.
+  Week 3: Problems, safety, and responsibilities.
+  Week 4: Future, dreams, and skills for this job.
+
+- For EACH week produce:
+  - title: short title (e.g., "Helping the City", "At the Fire Station").
+  - reading: 6–8 sentences as ONE short reading passage (no bullet list, no numbered steps).
+    * Avoid repeating sentences from other weeks.
+    * Avoid generic filler like "They check again and do the next step."
+  - vocab: 5 words related to that week's specific focus, not repeated across weeks.
+      Each vocab item:
+        - word: English word or short phrase.
+        - meaning_ko: Korean meaning (short, e.g., '도구', '안전모').
+        - example_en: simple example sentence in English.
+  - comprehension: 3 short questions about the reading (who/what/where/why/how).
+  - mcq: 3 multiple-choice questions. Each has:
+        prompt: short question
+        options: 4 answer options as simple English phrases.
+      (No answer index – only the text options.)
+  - short: 3 short-blank prompts where students write 1–3 words.
+  - writing: 1 writing prompt. Students write 2–4 sentences.
+      Also provide 3–4 required_words that students must use (English only).
+
+Return ONLY valid JSON in this exact structure:
+
+{
+  "weeks": [
+    {
+      "week": 1,
+      "title": "...",
+      "reading": "...",
+      "vocab": [
+        {"word": "...", "meaning_ko": "...", "example_en": "..."}
+      ],
+      "comprehension": [{"q": "..."}],
+      "mcq": [
+        {"prompt": "...", "options": ["...", "...", "...", "..."]}
+      ],
+      "short": [{"prompt": "..."}],
+      "writing": [
+        {"prompt": "...", "required_words": ["...", "...", "..."]}
+      ]
+    },
+    { "week": 2, ... },
+    { "week": 3, ... },
+    { "week": 4, ... }
+  ]
+}
+    """.strip()
+
+    resp = client.chat.completions.create(
+        model=MODEL,
+        temperature=0.6,
+        max_tokens=2200,
+        messages=[
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": user_msg},
+        ],
+    )
+
+    raw = resp.choices[0].message.content.strip()
+
+    # Try to strip ```json fences if they exist
+    if raw.startswith("```"):
+        raw = raw.strip("` \n")
+        if raw.lower().startswith("json"):
+            raw = raw[4:].lstrip()
+
+    try:
+        data = json.loads(raw)
+    except Exception:
+        # If parsing fails, return empty shell – caller will fall back to local synth
+        return {"weeks": []}
+
+    # Final safety cleaning: patch readings + basic shape guarantees
+    weeks = data.get("weeks") or []
+    cleaned_weeks = []
+
+    for i, w in enumerate(weeks, start=1):
+        week_num = w.get("week") or i
+
+        reading = _patch_reading(w.get("reading", ""))
+        vocab = w.get("vocab") or []
+        comp = w.get("comprehension") or []
+        mcq = w.get("mcq") or []
+        short = w.get("short") or []
+        writing = w.get("writing") or []
+
+        cleaned_weeks.append(
+            {
+                "week": int(week_num),
+                "title": (w.get("title") or f"Week {week_num}"),
+                "reading": reading,
+                "vocab": list(vocab),
+                "comprehension": list(comp),
+                "mcq": list(mcq),
+                "short": list(short),
+                "writing": list(writing),
             }
-        }
+        )
+
+    # Sort by week number 1..4
+    cleaned_weeks.sort(key=lambda x: x.get("week", 0))
+    return {"weeks": cleaned_weeks}
+
+import json
+from datetime import datetime, timedelta
+
+# ---------- Helper: small cleaner for boring / repeated sentences ----------
+
+def _clean_reading_text(text: str) -> str:
+    """Remove very generic filler sentences and tidy whitespace."""
+    if not text:
+        return ""
+    boring_phrases = [
+        "They check again and do the next step",
+        "They check again and then do the next step",
+    ]
+    for phrase in boring_phrases:
+        text = text.replace(phrase, "")
+    # Collapse extra spaces/newlines
+    text = " ".join(text.split())
+    return text.strip()
+
+
+# ---------- Main GPT generator for 4-week worksheet ----------
+
+def generate_career_worksheet_gpt_4w(job: str, level: int) -> dict:
+    """
+    Ask GPT to make a 4-week ESL career worksheet plan.
+
+    Output structure:
+    {
+      "job": "baker",
+      "_level": 2,
+      "weeks": [
+        {
+          "week": 1,
+          "title": "...",
+          "reading": "...",
+          "vocab": [
+            {"word":"oven","meaning_ko":"오븐","example_en":"The baker puts bread in the oven."},
+            ...
+          ],
+          "comprehension":[{"q":"..."}, ...],
+          "mcq":[
+            {"prompt":"...", "options":["A","B","C","D"], "answer_index":0},
+            ...
+          ],
+          "short":[{"prompt":"...", "answer":"..."}, ...],
+          "writing":[{"prompt":"...", "required_words":["...", "..."]}, ...]
+        },
+        ... (week 2–4)
+      ]
     }
+    """
+    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
-    client = get_openai()  # use your existing helper
+    # Make 4 clearly different weekly focuses
+    week_briefs = [
+        "Week 1 = Introduction and daily routine of a typical " + job,
+        "Week 2 = Tools, places, uniforms, and people the " + job + " works with",
+        "Week 3 = Problems, safety rules, and difficult situations in this job",
+        "Week 4 = Future dreams, goals, and reflections about this job",
+    ]
 
-    def _ask(max_retries=2):
-        last = None
-        for i in range(max_retries + 1):
-            try:
-                resp = client.chat.completions.create(
-                    model=OPENAI_MODEL,
-                    temperature=0.4,
-                    messages=[
-                        {"role": "system", "content": sys},
-                        {"role": "user", "content": json.dumps(user)}
-                    ]
-                )
-                return (resp.choices[0].message.content or "").strip()
-            except Exception as e:
-                last = e
-                time.sleep(0.7 * (i + 1))
-        raise last
+    level_desc = {
+        1: "very easy sentences (A1). Use short present-tense sentences and very common words.",
+        2: "easy sentences (A1–A2). Mostly present tense and simple past. Avoid long clauses.",
+        3: "medium difficulty (A2–B1). You may use some connectors like because, so, but.",
+        4: "upper-intermediate (B1). You can use past tense and some complex sentences.",
+        5: "harder (B1–B2). You can use more detail and a few less common words.",
+    }.get(level, "easy–medium ESL level.")
 
-    raw = _ask()
-    # salvage JSON if model wraps it
-    s, e = raw.find("{"), raw.rfind("}")
-    if s >= 0 and e > s:
-        raw = raw[s:e+1]
-    data = json.loads(raw)
+    system_msg = (
+        "You are an experienced ESL teacher for middle and high school students. "
+        "You design fun, clear English worksheets about jobs. "
+        "Always respond with STRICT JSON (no extra text)."
+    )
 
-    # ---------- basic cleaners ----------
-    def _int_1_4(x, default):
-        try:
-            v = int(float(str(x).strip()))
-        except Exception:
-            v = default
-        return 1 if v < 1 else 4 if v > 4 else v
+    user_msg = f"""
+Create a 4-week English worksheet plan about the job: "{job}".
 
-    def _clean_mcq(items, need=6):
-        out = []
-        for q in (items if isinstance(items, list) else []):
-            if not isinstance(q, dict):
+Student English level: {level} → {level_desc}
+
+You MUST:
+- Make **4 weeks** with TOTALLY different content.
+- Each week has its own reading, vocabulary, and questions.
+- Do NOT reuse the same reading text in another week.
+- Do NOT repeat generic filler like "They check again and do the next step".
+- Reading should be 120–200 words, written for ESL students, and connected to that week's focus.
+- Use simple, clear sentences. Prefer present simple and past simple.
+- Make the story concrete (names, places, times, actions). Avoid vague steps.
+
+Use these focuses:
+{week_briefs[0]}
+{week_briefs[1]}
+{week_briefs[2]}
+{week_briefs[3]}
+
+JSON FORMAT (no comments):
+
+{{
+  "job": "<job>",
+  "_level": <int 1-5>,
+  "weeks": [
+    {{
+      "week": 1,
+      "title": "Short title for the week",
+      "reading": "at least more than 180 words about the given job, informative things, for each week week focus",
+      "vocab": [
+        {{"word":"...", "meaning_ko":"Korean meaning", "example_en":"English example sentence."}},
+        ...
+      ],
+      "comprehension": [
+        {{"q":"Short open question about the reading (English)."}},
+        ...
+      ],
+      "mcq": [
+        {{
+          "prompt":"Question text in English",
+          "options":["A","B","C","D"],
+          "answer_index": 0
+        }},
+        ...
+      ],
+      "short": [
+        {{"prompt":"Short blank / short-answer question", "answer":"model answer"}},
+        ...
+      ],
+      "writing": [
+        {{
+          "prompt":"Writing task instruction (e.g., Write 5-7 sentences about ... )",
+          "required_words":["word1","word2","word3"]
+        }}
+      ]
+    }},
+    {{
+      "week": 2, ... (same structure, different story, different vocab)
+    }},
+    {{
+      "week": 3, ... (same structure, different story, different vocab)
+    }},
+    {{
+      "week": 4, ... (same structure, different story, different vocab)
+    }}
+  ]
+}}
+"""
+
+    try:
+        client = OpenAI(api_key=OPENAI_API_KEY)
+        resp = client.chat.completions.create(
+            model=model,
+            temperature=0.5,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg},
+            ],
+        )
+        raw = resp.choices[0].message.content
+        data = json.loads(raw)
+    except Exception as e:
+        app.logger.exception("Career worksheet GPT generation failed")
+        # Minimal safe fallback if GPT or JSON fails
+        return {
+            "job": job,
+            "_level": level,
+            "created_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            "weeks": [
+                {
+                    "week": w,
+                    "title": f"Week {w} – {job.title()}",
+                    "reading": "",
+                    "vocab": [],
+                    "comprehension": [],
+                    "mcq": [],
+                    "short": [],
+                    "writing": [],
+                }
+                for w in range(1, 5)
+            ],
+        }
+
+    weeks = data.get("weeks") or []
+    cleaned_weeks = []
+    seen_titles = set()
+
+    for idx, raw_w in enumerate(weeks[:4], start=1):
+        w_num = raw_w.get("week") or idx
+        title = (raw_w.get("title") or f"Week {w_num} – {job.title()}").strip()
+        if title in seen_titles:
+            title = f"{title} ({w_num})"
+        seen_titles.add(title)
+
+        reading = _clean_reading_text(raw_w.get("reading", ""))
+
+        # Vocab: keep 6–10 items, ensure structure
+        raw_vocab = raw_w.get("vocab") or []
+        vocab = []
+        seen_words = set()
+        for v in raw_vocab:
+            if not isinstance(v, dict):
                 continue
-            prompt = str(q.get("prompt","")).strip()
-            ops = q.get("options", [])
-            if not isinstance(ops, list): ops = []
-            ops = [str(o).strip() for o in ops if str(o).strip()][:4]
-            # pad to 4 options if short
-            while len(ops) < 4:
-                for filler in ("to","in","on","at","with","from"):
-                    if filler not in ops:
-                        ops.append(filler)
-                    if len(ops) == 4: break
-            ai = q.get("answer_index", 0)
-            try: ai = int(ai)
-            except: ai = 0
-            ai = max(0, min(3, ai))
-            out.append({"prompt": prompt or "Choose the correct word.", "options": ops[:4], "answer_index": ai})
-        # ensure at least `need`
-        while len(out) < need:
-            out.append({
-                "prompt": "Choose the correct preposition: I go __ the station.",
-                "options": ["to","in","on","at"], "answer_index": 0
-            })
-        return out[:need]
+            word = (v.get("word") or "").strip()
+            if not word or word.lower() in seen_words:
+                continue
+            vocab.append(
+                {
+                    "word": word,
+                    "meaning_ko": (v.get("meaning_ko") or "").strip(),
+                    "example_en": (v.get("example_en") or "").strip(),
+                }
+            )
+            seen_words.add(word.lower())
+            if len(vocab) >= 10:
+                break
 
-    def _clean_short(items, min_need=4, max_need=6):
-        out = []
-        for s in (items if isinstance(items, list) else []):
-            if not isinstance(s, dict): continue
-            prompt = str(s.get("prompt","")).strip() or "He walked __ the store."
-            ans = str(s.get("answer","")).strip() or "to"
-            alts = s.get("alternates", [])
-            if not isinstance(alts, list): alts = []
-            out.append({"prompt": prompt, "answer": ans, "alternates": [str(a).strip() for a in alts if str(a).strip()]})
-        # pad
-        base = [
-            {"prompt":"He walked __ the store.","answer":"to","alternates":["into","toward"]},
-            {"prompt":"They meet __ Monday.","answer":"on","alternates":["in","at"]},
-            {"prompt":"The cat is __ the table.","answer":"under","alternates":["below","beneath"]},
-            {"prompt":"We arrived __ 8 p.m.","answer":"at","alternates":["around"]},
-            {"prompt":"Put it __ the box.","answer":"in","alternates":["inside","into"]},
-            {"prompt":"She goes __ bus.","answer":"by","alternates":["on"]}
-        ]
-        i = 0
-        while len(out) < min_need and i < len(base):
-            out.append(base[i]); i += 1
-        return out[:max_need]
+        # Comprehension
+        comp = []
+        for c in raw_w.get("comprehension") or []:
+            if not isinstance(c, dict):
+                continue
+            q = (c.get("q") or "").strip()
+            if q:
+                comp.append({"q": q})
 
-    def _clean_vocab(items, need_min=8, need_max=10):
-        out = []
-        for v in (items if isinstance(items, list) else []):
-            if not isinstance(v, dict): continue
-            w = str(v.get("word","")).strip()
-            if not w: continue
-            out.append({
-                "word": w,
-                "meaning_ko": str(v.get("meaning_ko","")).strip(),
-                "example_en": str(v.get("example_en","")).strip()
-            })
-        # pad with safe placeholders if needed
-        fallback = [
-            {"word":"uniform","meaning_ko":"제복","example_en":"Police officers wear a uniform at work."},
-            {"word":"rescue","meaning_ko":"구조하다","example_en":"Firefighters rescue people from danger."},
-            {"word":"community","meaning_ko":"지역사회","example_en":"They help the community every day."},
-            {"word":"safety","meaning_ko":"안전","example_en":"Safety is the most important rule."},
-            {"word":"teamwork","meaning_ko":"팀워크","example_en":"Teamwork makes hard jobs easier."},
-            {"word":"emergency","meaning_ko":"긴급 상황","example_en":"Call 119 in an emergency."},
-            {"word":"equipment","meaning_ko":"장비","example_en":"They check their equipment before work."},
-            {"word":"protect","meaning_ko":"보호하다","example_en":"Officers protect people and places."},
-            {"word":"report","meaning_ko":"보고하다","example_en":"They write a report after each call."},
-            {"word":"signal","meaning_ko":"신호","example_en":"Follow the traffic signal at the street."}
-        ]
-        j = 0
-        while len(out) < need_min and j < len(fallback):
-            out.append(fallback[j]); j += 1
-        return out[:need_max]
+        # MCQ
+        mcq = []
+        for m in raw_w.get("mcq") or []:
+            if not isinstance(m, dict):
+                continue
+            prompt = (m.get("prompt") or "").strip()
+            options = m.get("options") or []
+            if not prompt or not options:
+                continue
+            mcq.append(
+                {
+                    "prompt": prompt,
+                    "options": [str(o) for o in options],
+                    "answer_index": int(m.get("answer_index") or 0),
+                }
+            )
 
-    def _clean_comp(items, need=6):
-        out = []
-        for c in (items if isinstance(items, list) else []):
-            if not isinstance(c, dict): continue
-            q = str(c.get("q","")).strip()
-            a = str(c.get("a","")).strip()
-            if q: out.append({"q": q, "a": a})
-        # pad if short
-        while len(out) < need:
-            k = len(out) + 1
-            out.append({"q": f"Q{k}. What is one important duty?", "a": "Answers may vary (e.g., help people)."})
-        return out[:need]
+        # Short blanks
+        short = []
+        for s in raw_w.get("short") or []:
+            if not isinstance(s, dict):
+                continue
+            prompt = (s.get("prompt") or "").strip()
+            ans = (s.get("answer") or "").strip()
+            if prompt:
+                short.append({"prompt": prompt, "answer": ans})
 
-    def _clean_writing(items, need=2):
-        out = []
-        for w in (items if isinstance(items, list) else []):
-            if not isinstance(w, dict): continue
-            req = w.get("required_words", [])
-            if not isinstance(req, list) or not req: continue
-            prompt = str(w.get("prompt") or f"Write one clear sentence using ALL of these words: {', '.join(req)}.").strip()
-            out.append({"required_words": [str(r).strip() for r in req if str(r).strip()][:5], "prompt": prompt})
-        # pad if short
-        base = [
-            {"required_words":["help","team","city"], "prompt":f"Write one sentence about how a {job} helps the city."},
-            {"required_words":["safe","people","work"], "prompt":f"Write one sentence that shows how a {job} keeps people safe."},
-        ]
-        i = 0
-        while len(out) < need and i < len(base):
-            out.append(base[i]); i += 1
-        return out[:need]
+        # Writing
+        writing = []
+        for w in raw_w.get("writing") or []:
+            if not isinstance(w, dict):
+                continue
+            prompt = (w.get("prompt") or "").strip()
+            if not prompt:
+                continue
+            req = w.get("required_words") or []
+            writing.append(
+                {
+                    "prompt": prompt,
+                    "required_words": [str(r).strip() for r in req if str(r).strip()],
+                }
+            )
 
-    # --------- synthesizers (self-healing when GPT is thin) ---------
-    def _synth_reading(job, vocab, level, target_words=(140, 200)):
-        # build short sentences and weave vocab examples
-        base = [
-            f"This unit is about the job of {job}.",
-            "People in this job help the community every day.",
-            "They work with a team and follow safety rules.",
-            "They start with a plan and check their equipment.",
-            "Clear steps help them do the job well.",
-        ]
-        for v in (vocab or [])[:8]:
-            w = v.get("word", "work")
-            ex = v.get("example_en", f"They often use the word {w} at work.")
-            base.append(ex if 6 <= len(ex.split()) <= 16 else f"They often talk about {w}.")
-        base += [
-            "They talk to people in a simple and kind way.",
-            "This job needs practice, focus, and teamwork.",
-            "They try to keep everyone safe and calm.",
-        ]
-        text = " ".join(base)
-        while len(text.split()) < target_words[0]:
-            text += " They check again and do the next step."
-        return text
+        cleaned_weeks.append(
+            {
+                "week": w_num,
+                "title": title,
+                "reading": reading,
+                "vocab": vocab,
+                "comprehension": comp,
+                "mcq": mcq,
+                "short": short,
+                "writing": writing,
+            }
+        )
 
-    def _synth_comp_from_reading(reading, need=6):
-        stems = [
-            "What is this unit about?",
-            "What do they do every day?",
-            "What helps them do the job well?",
-            "How do they talk to people?",
-            "What do they check before work?",
-            "What does this job need?",
-            "Why are rules important?",
-            "Who do they help?"
-        ]
-        out = []
-        for q in stems:
-            out.append({"q": q, "a": "Answers may vary."})
-            if len(out) >= need: break
-        return out[:need]
+    # If GPT returned fewer than 4, pad with empty ones
+    while len(cleaned_weeks) < 4:
+        w_num = len(cleaned_weeks) + 1
+        cleaned_weeks.append(
+            {
+                "week": w_num,
+                "title": f"Week {w_num} – {job.title()}",
+                "reading": "",
+                "vocab": [],
+                "comprehension": [],
+                "mcq": [],
+                "short": [],
+                "writing": [],
+            }
+        )
 
-    def _synth_mcq_from_vocab(vocab, need=6):
-        out = []
-        options_pool = ["safety","teamwork","report","uniform","signal","rescue","protect","equipment","community"]
-        for v in (vocab or []):
-            word = v.get("word", "")
-            meaning = v.get("meaning_ko", "")
-            if not word: continue
-            opts = [word]
-            for o in options_pool:
-                if o != word and o not in opts:
-                    opts.append(o)
-                if len(opts) == 4: break
-            random.shuffle(opts)
-            ai = opts.index(word) if word in opts else 0
-            out.append({
-                "prompt": f"Choose the word that matches: {meaning or 'meaning'}",
-                "options": opts[:4],
-                "answer_index": ai
-            })
-            if len(out) >= need: break
-        while len(out) < need:
-            out.append({
-                "prompt": "Choose the correct preposition: I go __ the station.",
-                "options": ["to","in","on","at"], "answer_index": 0
-            })
-        return out[:need]
-
-    def _synth_short(need=5):
-        return [
-            {"prompt":"He walked __ the store.","answer":"to","alternates":["into","toward"]},
-            {"prompt":"They meet __ Monday.","answer":"on","alternates":["in","at"]},
-            {"prompt":"The cat is __ the table.","answer":"under","alternates":["below","beneath"]},
-            {"prompt":"We arrived __ 8 p.m.","answer":"at","alternates":["around"]},
-            {"prompt":"Put it __ the box.","answer":"in","alternates":["inside","into"]},
-            {"prompt":"She goes __ bus.","answer":"by","alternates":["on"]},
-        ][:need]
-
-    def _synth_writing(job, level, need=2):
-        bank = [
-            {"required_words":["help","team","city"], "prompt":f"Write one sentence about how a {job} helps the city."},
-            {"required_words":["safe","people","work"], "prompt":f"Write one sentence that shows how a {job} keeps people safe."},
-            {"required_words":["plan","check","equipment"], "prompt":"Write one sentence using these words."},
-        ]
-        return bank[:need]
-
-    # ---------- build cleaned weeks with hard minimums ----------
-    weeks = data.get("weeks", [])
-    if not isinstance(weeks, list): weeks = []
-
-    cleaned = []
-    for idx, w in enumerate(weeks, start=1):
-        w = w if isinstance(w, dict) else {}
-        wk = _int_1_4(w.get("week"), idx)
-        title = str(w.get("title", f"Week {wk} • {job.title()}")).strip() or f"Week {wk}"
-        reading = str(w.get("reading","")).strip()
-
-        vocab = _clean_vocab(w.get("vocab", []))
-        comp  = _clean_comp(w.get("comprehension", []))
-        mcq   = _clean_mcq(w.get("mcq", []), need=6)
-        short = _clean_short(w.get("short", []), min_need=4, max_need=6)
-        writing = _clean_writing(w.get("writing", []), need=2)
-
-        # synthesize when too thin
-        if not reading or len(reading.split()) < 120:
-            reading = _synth_reading(job, vocab, level)
-        if len(vocab) < 8:
-            vocab = _clean_vocab(vocab)  # pads with fallbacks
-        if len(comp) < 6:
-            comp = _synth_comp_from_reading(reading, need=6)
-        if len(mcq) < 6:
-            mcq = _synth_mcq_from_vocab(vocab, need=6)
-        if len(short) < 4:
-            short = _synth_short(need=5)
-        if len(writing) < 2:
-            writing = _synth_writing(job, level, need=2)
-
-        cleaned.append({
-            "week": wk,
-            "title": title,
-            "reading": reading,
-            "vocab": vocab,
-            "comprehension": comp,
-            "mcq": mcq,
-            "short": short,
-            "writing": writing
-        })
-
-    # ensure exactly 4 weeks
-    while len(cleaned) < 4:
-        base = cleaned[-1] if cleaned else {
-            "week": len(cleaned)+1, "title": f"Week {len(cleaned)+1}",
-            "reading":"", "vocab":[], "comprehension":[], "mcq":[], "short":[], "writing":[]
-        }
-        dup = dict(base)
-        dup["week"] = len(cleaned)+1
-        if not dup.get("reading"):
-            dup["reading"] = _synth_reading(job, [], level)
-        if not dup.get("vocab"):
-            dup["vocab"] = _clean_vocab([])
-        if not dup.get("comprehension"):
-            dup["comprehension"] = _synth_comp_from_reading(dup["reading"], need=6)
-        if not dup.get("mcq"):
-            dup["mcq"] = _synth_mcq_from_vocab(dup["vocab"], need=6)
-        if not dup.get("short"):
-            dup["short"] = _synth_short(need=5)
-        if not dup.get("writing"):
-            dup["writing"] = _synth_writing(job, level, need=2)
-        cleaned.append(dup)
-    cleaned = cleaned[:4]
-
-    return {
-        "job": (data.get("job") or job).lower(),
-        "_level": level,
-        "_lang": lang,
-        "weeks": cleaned
+    out = {
+        "job": data.get("job") or job,
+        "_level": data.get("_level") or level,
+        "created_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "weeks": cleaned_weeks[:4],
     }
+    return out
 
+
+# ---------- /career route (form + creation) ----------
 
 @app.route("/career", methods=["GET", "POST"])
 def career():
     if "username" not in session:
-        return redirect(url_for("login"))
-    username = session["username"]
+        return redirect(url_for("login", next=request.path))
 
     if request.method == "POST":
-        job = (request.form.get("job") or "").strip()
+        job = request.form.get("job", "").strip()
+        level_str = request.form.get("level", "2").strip()
+
         try:
-            level = int(request.form.get("level") or 1)
-        except:
-            level = 1
+            level = int(level_str)
+        except ValueError:
+            level = 2
+        level = max(1, min(5, level))
 
         if not job:
-            flash("Please enter a job.", "warning")
-            return render_template("career_form.html")
+            flash("Please type a job (e.g., police, firefighter, baker).", "warning")
+            return redirect(url_for("career"))
 
-        # try:
-        ws = generate_career_worksheet_gpt_4w(job, level)
-        # except Exception as e:
-        #     flash(f"Could not generate worksheet: {e}", "danger")
-        #     return render_template("career_form.html")
+        # --- Generate 4-week worksheet payload ---
+        ws = None
+        try:
+            ws = generate_career_worksheet_gpt_4w(job, level)
+        except Exception:
+            app.logger.exception("Error while generating career worksheet")
+
+        # Very defensive fallback if something went wrong
+        if not isinstance(ws, dict) or "weeks" not in ws:
+            ws = {
+                "job": job,
+                "_level": level,
+                "created_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+                "weeks": [
+                    {
+                        "week": w,
+                        "title": f"Week {w} – {job.title()}",
+                        "reading": "",
+                        "vocab": [],
+                        "comprehension": [],
+                        "mcq": [],
+                        "short": [],
+                        "writing": [],
+                    }
+                    for w in range(1, 5)
+                ],
+            }
 
         db = get_db()
         cur = db.execute(
-            "INSERT INTO career_worksheets(username, job, level, payload) VALUES(?,?,?,?)",
-            (username, ws["job"], ws["_level"], json.dumps(ws))
+            """
+            INSERT INTO career_worksheets (username, job, level, payload)
+            VALUES (?, ?, ?, ?)
+            """,
+            (session.get("username"), job, level, json.dumps(ws)),
         )
-        db.commit()
         ws_id = cur.lastrowid
-        # After generation → overview page with locks
+        db.commit()
+
+        flash("Career worksheet created!", "success")
         return redirect(url_for("career_overview", ws_id=ws_id))
 
+    # GET
     return render_template("career_form.html")
+
 @app.get("/career/<int:ws_id>/overview")
 def career_overview(ws_id):
     if "username" not in session:
