@@ -212,9 +212,11 @@ def ensure_column(db, table, column, coldef):
     cols = [r["name"] for r in db.execute(f'PRAGMA table_info("{table}")').fetchall()]
     if column not in cols:
         db.execute(f'ALTER TABLE {table} ADD COLUMN {column} {coldef}')
+from google.cloud import translate_v2 as translate
+
 def dict_lookup_en_ko(word: str):
     """
-    Tries: cache -> MyMemory (free) -> dictionaryapi.dev (EN def only).
+    Tries: cache -> Google Translate -> dictionaryapi.dev.
     Returns (translation_ko, definition_en). Both may be None.
     """
     db = get_db()
@@ -222,25 +224,41 @@ def dict_lookup_en_ko(word: str):
     if not word:
         return None, None
 
-    # cache
-    row = db.execute("SELECT translation, definition FROM dict_cache WHERE word=? AND (lang='en-ko' OR lang IS NULL)", (word,)).fetchone()
+    # --- check cache first ---
+    row = db.execute(
+        "SELECT translation, definition FROM dict_cache WHERE word=? AND (lang='en-ko' OR lang IS NULL)",
+        (word,)
+    ).fetchone()
+
     if row and row["translation"] and row["definition"]:
         return row["translation"], row["definition"]
 
-    trans_ko, defin_en = None, None
+    translation_ko, definition_en = None, None
 
-    # MyMemory (free; quality varies)
+    # --- GOOGLE TRANSLATE (main translation engine) ---
     try:
-        r = requests.get("https://api.mymemory.translated.net/get", params={"q": word, "langpair": "en|ko"}, timeout=5)
-        if r.ok:
-            data = r.json()
-            trans_ko = (data.get("responseData", {}) or {}).get("translatedText")
-    except Exception:
-        pass
 
-    # English definition (dictionaryapi.dev)
+
+        url = "https://translation.googleapis.com/language/translate/v2"
+        params = {
+            "q": word,
+            "target": "ko",
+            "source": "en",
+            "key": "AIzaSyCG14vrQaBjCyidFq_xZKClZCe1U7CdkWA",  # put your key here or via env
+        }
+        r = requests.post(url, data=params, timeout=5)
+        r.raise_for_status()
+        data = r.json()
+        translation_ko = data["data"]["translations"][0]["translatedText"]
+    except Exception as e:
+        print("Google Translate error:", e)
+
+    # --- English definition (dictionaryapi.dev) ---
     try:
-        r = requests.get(f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}", timeout=5)
+        r = requests.get(
+            f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}",
+            timeout=5
+        )
         if r.ok:
             j = r.json()
             if isinstance(j, list) and j:
@@ -248,19 +266,25 @@ def dict_lookup_en_ko(word: str):
                 if meanings:
                     defs = meanings[0].get("definitions", [])
                     if defs:
-                        defin_en = defs[0].get("definition")
+                        definition_en = defs[0].get("definition")
     except Exception:
         pass
 
-    # Save cache (best effort)
+    # --- Save to cache ---
     try:
-        db.execute("INSERT OR REPLACE INTO dict_cache(word, lang, translation, definition, updated_at) VALUES(?,?,?,?,CURRENT_TIMESTAMP)",
-                   (word, "en-ko", trans_ko or "", defin_en or ""))
+        db.execute(
+            """
+            INSERT OR REPLACE INTO dict_cache(word, lang, translation, definition, updated_at)
+            VALUES(?,?,?,?,CURRENT_TIMESTAMP)
+            """,
+            (word, "en-ko", translation_ko or "", definition_en or "")
+        )
         db.commit()
     except Exception:
         pass
 
-    return trans_ko, defin_en
+    return translation_ko, definition_en
+
 from datetime import date as _date
 import hashlib
 
