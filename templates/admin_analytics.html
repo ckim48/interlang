@@ -5,8 +5,8 @@
 <title>Admin • Student Analytics</title>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
-    <link rel="icon" href="{{ url_for('static', filename='img/favicon.png') }}" sizes="32x32"/>
-  <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" sizes="180x180"/>
+<link rel="icon" href="{{ url_for('static', filename='img/favicon.png') }}" sizes="32x32"/>
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" sizes="180x180"/>
 
 <style>
 :root{
@@ -207,8 +207,8 @@ body{
 
 </div>
 
-<!-- ===== View Modal (read-only submission detail) ===== -->
-<div class="modal fade" id="viewModal" tabindex="-1" aria-hidden="true">
+<!-- ===== View Modal ===== -->
+<div class="modal fade" style="margin-top:80px;" id="viewModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
@@ -228,8 +228,8 @@ body{
   </div>
 </div>
 
-<!-- ===== Review Modal (grade + per-question comments) ===== -->
-<div class="modal fade" id="reviewModal" tabindex="-1" aria-hidden="true">
+<!-- ===== Review Modal ===== -->
+<div class="modal fade"  style="margin-top:80px;" id="reviewModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <form id="reviewForm" class="modal-content">
       <div class="modal-header">
@@ -254,7 +254,7 @@ body{
         <hr class="my-3"/>
 
         <div id="rmQuestions">
-          <!-- Filled with per-question feedback textareas if the submission provides question list -->
+          <!-- Filled dynamically -->
         </div>
 
         <div id="rmError" class="alert alert-warning d-none mt-2">Could not load submission detail for comments.</div>
@@ -383,7 +383,6 @@ function renderWorksheetTable(details){
     const comment = fmt(w.review?.comment);
     const reviewedAt = fmt(w.review?.reviewed_at);
 
-    // Actions
     const disabled = (!w.submitted || !w.submission_id) ? "disabled" : "";
     const row = `
       <tr data-week="${w.week}" data-subid="${w.submission_id || ""}">
@@ -409,7 +408,6 @@ function renderWorksheetTable(details){
     wsTableBody.insertAdjacentHTML("beforeend", row);
   }
 
-  // Wire up buttons
   wsTableBody.querySelectorAll(".btn-view").forEach(b => b.addEventListener("click", onClickView));
   wsTableBody.querySelectorAll(".btn-review").forEach(b => b.addEventListener("click", onClickReview));
 }
@@ -435,27 +433,12 @@ async function loadUser(){
 }
 
 /* ==================== View Modal Logic ==================== */
-/* Expected JSON from /admin/submission/<id>/json (suggested):
-{
-  "submission_id": 123,
-  "week": 2,
-  "username": "alice",
-  "submitted_at": "2025-11-10 13:22",
-  "sections": [
-    {"type":"reading","text":"..."},
-    {"type":"mcq","items":[{"prompt":"...","chosen":1,"options":["A","B","C","D"],"correct_index":0}]},
-    {"type":"short","items":[{"prompt":"...","answer":"cat"}]},
-    {"type":"writing","items":[{"prompt":"...","text":"..."}]}
-  ]
-}
-*/
 async function onClickView(e){
   const tr = e.target.closest("tr");
   const submission_id = tr?.dataset?.subid;
   const week = tr?.dataset?.week || "—";
   if (!submission_id) return;
 
-  // Fill header
   document.getElementById("vmSubId").textContent = submission_id;
   document.getElementById("vmWeek").textContent = week;
   const vmBody = document.getElementById("vmBody");
@@ -516,13 +499,9 @@ async function onClickView(e){
 }
 
 /* ==================== Review Modal Logic ==================== */
-/* We try to load the same JSON as View to build per-question comment boxes.
-   Post destination default: /admin/review/<submission_id>
-   You can change it in buildReviewURL().
-*/
 function buildReviewURL(submission_id){
-  // Change here if your route is different (e.g., /admin_save_review?submission_id=)
-  return `/admin/worksheets/review/${encodeURIComponent(submission_id)}`;
+  // FIXED: point to the actual backend route
+  return `/admin/review/${encodeURIComponent(submission_id)}`;
 }
 
 async function onClickReview(e){
@@ -531,7 +510,6 @@ async function onClickReview(e){
   const week = tr?.dataset?.week || "—";
   if (!submission_id) return;
 
-  // Fill header + clear fields
   document.getElementById("rmSubId").textContent = submission_id;
   document.getElementById("rmWeek").textContent = week;
   document.getElementById("rmScore").value = "";
@@ -540,7 +518,6 @@ async function onClickReview(e){
   rmQuestions.innerHTML = "<div class='text-secondary'>Loading questions…</div>";
   document.getElementById("rmError").classList.add("d-none");
 
-  // Try to preload questions for per-item comments (optional)
   try{
     const r = await fetch(`/admin/submission/${encodeURIComponent(submission_id)}/json`);
     if(!r.ok) throw new Error();
@@ -593,7 +570,6 @@ async function onClickReview(e){
     document.getElementById("reviewForm").dataset.qcount = qcount.toString();
 
   }catch(err){
-    // Not fatal — admin can still give overall score/comment
     rmQuestions.innerHTML = "";
     document.getElementById("rmError").classList.remove("d-none");
     document.getElementById("reviewForm").dataset.qcount = "0";
@@ -610,7 +586,6 @@ document.getElementById("reviewForm").addEventListener("submit", async (e)=>{
   const comment = document.getElementById("rmComment").value || "";
   const qcount = parseInt(e.currentTarget.dataset.qcount || "0", 10);
 
-  // Collect per-item feedback (optional)
   const perItem = [];
   for (let i=1;i<=qcount;i++){
     const t = e.currentTarget.querySelector(`[name="fbk_${i}"]`);
@@ -619,15 +594,12 @@ document.getElementById("reviewForm").addEventListener("submit", async (e)=>{
     }
   }
 
-const payload = {
-  score,
-  comment,
-  items: perItem.map(({ index, comment }) => ({
-    key: `Q${index}`,    // any stable key; Q1, Q2, ...
-    points: null,        // or a number if you have it
-    comment: comment
-  }))
-};
+  // FIXED payload key to match backend
+  const payload = {
+    score,
+    comment,
+    per_item_feedback: perItem
+  };
 
   try{
     const r = await fetch(buildReviewURL(subId), {
@@ -637,7 +609,7 @@ const payload = {
     });
     if(!r.ok) throw new Error(`HTTP ${r.status}`);
   }catch(err){
-    // Fallback: try typical form-encoded to a legacy endpoint if needed
+    // Optional legacy fallback if you add a /admin_save_review route later
     try{
       const formData = new FormData();
       formData.append("score", String(score));
@@ -654,7 +626,6 @@ const payload = {
     }
   }
 
-  // Close modal & refresh
   bootstrap.Modal.getInstance(document.getElementById('reviewModal'))?.hide();
   await loadUser();
 });

@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Admin • GPT Story Generator</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+  <link rel="icon" href="{{ url_for('static', filename='img/favicon.png') }}" sizes="32x32"/>
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" sizes="180x180"/>
+
+  <style>
+    :root{
+      /* for loading overlay */
+      --ink:#2a2a2a;
+      --muted:#6e7494;
+
+      --bg-wash-1:#fff7f1; /* peach */
+      --bg-wash-2:#f0f7ff; /* sky */
+      --bg-wash-3:#f7fff6; /* mint */
+
+      --brand:#ff8db3;   /* strawberry */
+      --brand-2:#7acbff; /* blue */
+      --brand-4:#ffd86b; /* sunshine */
+    }
+
+    body{
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f7ff;
+    }
+    .page-card{
+      background: #fff;
+      border-radius: 18px;
+      border: 1px solid #e2e7ff;
+      box-shadow: 0 16px 40px rgba(15,23,42,.10);
+      padding: 22px;
+      margin-top: 24px;
+    }
+    .title-main{
+      font-weight: 800;
+      font-size: clamp(20px, 2.6vw, 24px);
+    }
+
+    /* ===== Loading overlay ===== */
+    .loading-overlay{
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(60vmax 40vmax at 8% 0%, var(--bg-wash-2) 0%, transparent 65%),
+        radial-gradient(60vmax 40vmax at 92% 4%, var(--bg-wash-1) 0%, transparent 65%),
+        radial-gradient(36vmax 28vmax at 50% 100%, var(--bg-wash-3) 0%, transparent 70%),
+        #ffffffee;
+      backdrop-filter: blur(2px);
+    }
+    .loading-card{
+      border:1px solid #e2e7ff;
+      background:linear-gradient(180deg,#ffffff,#fbfcff);
+      border-radius:20px;
+      padding:22px 22px 18px;
+      box-shadow:0 16px 44px rgba(5290,160,.12);
+      width:min(420px,92vw);
+      text-align:center;
+    }
+    .spinner{
+      width:56px; height:56px;
+      margin: 4px auto 10px;
+      border-radius:50%;
+      border:4px solid #e6ecff;
+      border-top-color: var(--brand-2);
+      border-right-color: var(--brand);
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin{ to{ transform: rotate(360deg) } }
+
+    .load-title{
+      font-weight:800;
+      color:#1f2b46;
+      font-size:1.1rem;
+      margin:6px 0 2px;
+    }
+    .load-sub{
+      color:var(--muted);
+      font-weight:600;
+      font-size:.92rem;
+      margin:0 0 8px;
+    }
+    .progress-dots{
+      display:inline-flex; gap:6px; align-items:center; justify-content:center;
+    }
+    .progress-dots i{
+      width:8px; height:8px; border-radius:50%; background:#e6ecff; display:inline-block;
+      animation: pop 1.4s ease-in-out infinite;
+    }
+    .progress-dots i:nth-child(1){ animation-delay:0s; background:var(--brand) }
+    .progress-dots i:nth-child(2){ animation-delay:.2s; background:var(--brand-2) }
+    .progress-dots i:nth-child(3){ animation-delay:.4s; background:var(--brand-4) }
+    @keyframes pop{
+      0%, 80%, 100%{ transform: translateY(0); opacity:.8 }
+      40%{ transform: translateY(-6px); opacity:1 }
+    }
+
+    @media (prefers-reduced-motion:reduce){
+      .spinner{ animation:none; border-top-color: var(--brand-2); border-right-color: var(--brand) }
+      .progress-dots i{ animation:none }
+    }
+  </style>
+</head>
+<body>
+
+{% include 'nav.html' %}
+
+<div class="container" style="max-width:900px;">
+  <div class="page-card">
+
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+      <div>
+        <h1 class="title-main mb-1">Admin • GPT Story Generator</h1>
+        <div class="text-muted small">
+          Fill the fields (optional) to control the story meta, then generate a single story
+          and save it into the <code>stories</code> table.
+        </div>
+      </div>
+    </div>
+
+    <!-- Form -->
+    <form method="post" class="mb-3" id="gptForm">
+      <div class="row g-3 align-items-end">
+
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold">Title (optional)</label>
+          <input
+            type="text"
+            name="title"
+            class="form-control"
+            placeholder="e.g. The Curious Fox"
+            value="{{ request.form.get('title','') }}"
+          >
+        </div>
+
+        <div class="col-md-2">
+          <label class="form-label small fw-semibold">Age Min</label>
+          <input
+            type="number"
+            name="age_min"
+            class="form-control"
+            min="5" max="14"
+            value="{{ request.form.get('age_min','7') }}"
+          >
+        </div>
+
+        <div class="col-md-2">
+          <label class="form-label small fw-semibold">Age Max</label>
+          <input
+            type="number"
+            name="age_max"
+            class="form-control"
+            min="6" max="14"
+            value="{{ request.form.get('age_max','9') }}"
+          >
+        </div>
+
+        <div class="col-md-2">
+          <label class="form-label small fw-semibold">Difficulty (1–5)</label>
+          <select name="difficulty" class="form-select">
+            {% for d in [1,2,3,4,5] %}
+            <option value="{{ d }}" {% if request.form.get('difficulty','3')|int == d %}selected{% endif %}>
+              {{ d }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- New: main character type -->
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold">Main character</label>
+          {% set char_type = request.form.get('character_type','') %}
+          <select name="character_type" class="form-select">
+            <option value="" {% if char_type == '' %}selected{% endif %}>
+              Auto (let GPT decide)
+            </option>
+            <option value="child" {% if char_type == 'child' %}selected{% endif %}>
+              Human child
+            </option>
+            <option value="animal" {% if char_type == 'animal' %}selected{% endif %}>
+              Animal
+            </option>
+            <option value="creature" {% if char_type == 'creature' %}selected{% endif %}>
+              Magical creature / robot
+            </option>
+          </select>
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">
+            Categories (comma-separated)
+          </label>
+          <input
+            type="text"
+            name="categories"
+            class="form-control"
+            placeholder="e.g. Animals, Friendship, School"
+            value="{{ request.form.get('categories','') }}"
+          >
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">
+            Themes (comma-separated)
+          </label>
+          <input
+            type="text"
+            name="themes"
+            class="form-control"
+            placeholder="e.g. Courage, Kindness, Teamwork"
+            value="{{ request.form.get('themes','') }}"
+          >
+        </div>
+
+        <div class="col-12 text-end">
+          <button class="btn btn-primary mt-2" id="generateBtn" type="submit">
+            <i class="bi bi-stars me-1"></i>
+            Generate New Story
+          </button>
+        </div>
+      </div>
+    </form>
+
+    {% if error %}
+      <div class="alert alert-danger mt-2">
+        {{ error }}
+      </div>
+    {% endif %}
+
+    {% if last_story %}
+      <hr class="my-3"/>
+
+      <h5 class="fw-bold mb-2">Latest generated story</h5>
+      <div class="card border-0 shadow-sm">
+        <div class="card-body">
+          <h5 class="card-title mb-1">{{ last_story.title }}</h5>
+          <div class="text-muted small mb-2">
+            ID {{ last_story.id }} • Slug <code>{{ last_story.slug }}</code>
+          </div>
+          <p class="mb-1">
+            Age: <strong>{{ last_story.age_min }}–{{ last_story.age_max }}</strong> ·
+            Difficulty: <strong>{{ last_story.difficulty }}</strong>
+          </p>
+          <p class="mb-2">
+            Categories:
+            <strong>{{ last_story.categories|join(', ') }}</strong><br/>
+            Themes:
+            <strong>{{ last_story.themes|join(', ') }}</strong>
+          </p>
+          <!-- Added js-open-story class so we can hook the loading overlay -->
+          <a href="{{ url_for('read_story', slug=last_story.slug) }}"
+             class="btn btn-outline-secondary js-open-story">
+            <i class="bi bi-book-half me-1"></i> Open Story Page
+          </a>
+        </div>
+      </div>
+    {% endif %}
+
+  </div>
+</div>
+
+<!-- Loading overlay (hidden by default) -->
+<div class="loading-overlay" id="loadingOverlay" hidden aria-live="polite" aria-busy="true">
+  <div class="loading-card" role="dialog" aria-modal="true" aria-label="Generating story">
+    <div class="spinner" aria-hidden="true"></div>
+    <div class="load-title">Generating your story…</div>
+    <p class="load-sub">This may take a few seconds while GPT writes and saves it.</p>
+    <div class="progress-dots" aria-hidden="true">
+      <i></i><i></i><i></i>
+    </div>
+  </div>
+</div>
+
+<noscript>
+  <style>.loading-overlay{display:none!important}</style>
+</noscript>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+(function(){
+  const form = document.getElementById('gptForm');
+  const overlay = document.getElementById('loadingOverlay');
+  const generateBtn = document.getElementById('generateBtn');
+  const openStoryLinks = document.querySelectorAll('.js-open-story');
+
+  function showOverlay() {
+    overlay.hidden = false;
+    document.documentElement.style.pointerEvents = 'none';
+    overlay.style.pointerEvents = 'auto';
+    if (generateBtn){
+      generateBtn.setAttribute('disabled', 'disabled');
+    }
+  }
+
+  if(form){
+    form.addEventListener('submit', function(e){
+      // show overlay on submit
+      showOverlay();
+    }, { passive: true });
+  }
+
+  // also show overlay when user clicks "Open Story Page"
+  openStoryLinks.forEach(link => {
+    link.addEventListener('click', function(){
+      showOverlay();
+      // no preventDefault: allow normal navigation while overlay shows
+    }, { passive: true });
+  });
+
+  // If page is restored from bfcache (back/forward), reset overlay
+  window.addEventListener('pageshow', function(evt){
+    if (evt.persisted){
+      overlay.hidden = true;
+      document.documentElement.style.pointerEvents = '';
+      if (generateBtn){
+        generateBtn.removeAttribute('disabled');
+      }
+    }
+  });
+})();
+</script>
+</body>
+</html>

@@ -38,7 +38,6 @@
         var(--bg);
       background-attachment: fixed;
     }
-/*    .container{ max-width:1080px; }*/
 
     /* ===== Section header (cheerful) ===== */
     .hero{
@@ -106,7 +105,7 @@
     }
     .adv label{ color:#5a6a8f; font-size:.82rem; margin-bottom:4px; font-weight:800; }
 
-    /* ===== Story card (Option 1: soft rounded rectangle) ===== */
+    /* ===== Story card ===== */
     .story-card{
       display:block; text-decoration:none; color:inherit;
       position:relative; overflow:hidden; height:100%;
@@ -123,10 +122,36 @@
       border-color:#d9e6ff;
     }
     .story-card::before{
-      /* accent spine like Bingo levels */
       content:""; position:absolute; inset:0 auto 0 0; width:8px; opacity:.95;
       background:linear-gradient(180deg, var(--brand), var(--brand-2));
     }
+
+    /* Cover image */
+    .story-cover-wrap{
+      position:relative;
+      border-radius:16px;
+      overflow:hidden;
+      margin:-4px -2px 10px 6px; /* align nicely with padding & spine */
+      background:linear-gradient(135deg,#e0f2fe,#fef3c7);
+    }
+    .story-cover-img{
+      display:block;
+      width:100%;
+      aspect-ratio:4/3;
+      object-fit:cover;
+    }
+    .story-cover-placeholder{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      width:100%;
+      aspect-ratio:4/3;
+      font-size:.8rem;
+      font-weight:800;
+      color:#64748b;
+      padding:0 6px;
+    }
+
     .tile-head{
       display:flex; align-items:flex-start; gap:10px; margin-bottom:6px;
     }
@@ -273,6 +298,23 @@
       {% for s in items %}
       <div class="col-12 col-sm-6 col-lg-4">
         <a class="story-card read-link" href="{{ url_for('read_story', slug=s.slug) }}">
+
+          <!-- Cover image area -->
+          <div class="story-cover-wrap">
+            {% if s.cover_path %}
+              <img
+                src="{{ url_for('static', filename=s.cover_path) }}"
+                alt="{{ s.title }}"
+                class="story-cover-img"
+                loading="lazy"
+              >
+            {% else %}
+              <div class="story-cover-placeholder">
+                Cover will be created the first time you open this story.
+              </div>
+            {% endif %}
+          </div>
+
           <div class="tile-head">
             <div class="sticker" aria-hidden="true">
               <i class="bi {% if s.category_icon %}{{ s.category_icon }}{% else %}bi-book{% endif %}"></i>

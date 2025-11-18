@@ -14,6 +14,7 @@ from flask import (
     g, session, redirect, url_for, request, flash, jsonify
 )
 
+
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 # ==== CareerQuest weekly unlock helpers ====
 from datetime import datetime, timedelta
@@ -40,7 +41,54 @@ def _parse_sqlite_ts(ts: str) -> datetime:
             pass
     # Fallback
     return datetime.now(tz=KST)
+OPENAI_IMAGE_MODEL = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1")
 
+def get_gpt_default_cover_url() -> str:
+    """
+    Generate (once) and cache a single watercolor cover image for GPT stories.
+    Saves it under static/covers/gpt_default_cover.png and returns its /static URL.
+    If OpenAI is not configured or an error occurs, just returns the path so you can
+    drop a manual image in that location.
+    """
+    # relative path inside /static
+    rel_path = "covers/gpt_default_cover.png"
+    static_dir = os.path.join(app.root_path, "static")
+    full_path = os.path.join(static_dir, rel_path)
+
+    # make sure directory exists
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+
+    # if already generated, just return the URL
+    if os.path.exists(full_path):
+        return "/static/" + rel_path.replace("\\", "/")
+
+    # if no OpenAI client, just return the path (you can manually put an image there)
+    if not openai_client:
+        return "/static/" + rel_path.replace("\\", "/")
+
+    # prompt: watercolor, child age 6–8
+    prompt = (
+        "Watercolor illustration of a 6 to 8 year old child happily reading a storybook. "
+        "Soft pastel colors, cozy simple background, children's picture book cover, no text on the image."
+    )
+
+    try:
+        resp = openai_client.images.generate(
+            model=OPENAI_IMAGE_MODEL,
+            prompt=prompt,
+            n=1,
+            size="1024x1024",
+        )
+        url = resp.data[0].url
+        r = requests.get(url, timeout=30)
+        r.raise_for_status()
+        with open(full_path, "wb") as f:
+            f.write(r.content)
+    except Exception as e:
+        print("Error generating GPT cover image:", e)
+
+    # even if generation failed, this is the URL where you *intend* the file to live
+    return "/static/" + rel_path.replace("\\", "/")
 def compute_week_unlocks(created_at: str, weeks: int = 4):
     """
     Returns list of dicts:
@@ -213,16 +261,149 @@ def dict_lookup_en_ko(word: str):
         pass
 
     return trans_ko, defin_en
-def _stable_seed_from_args(path: str, q, category, theme, age, difficulty):
-    """
-    Build a deterministic daily seed from the current filters + path.
-    Ensures random order stays stable for the day (and per filter set).
-    """
-    today = datetime.date.today().isoformat()
-    key = f"{path}|{q}|{category}|{theme}|{age}|{difficulty}|{today}"
-    # Stable 32-bit integer from SHA1
-    return int(hashlib.sha1(key.encode("utf-8")).hexdigest(), 16) & 0xFFFFFFFF
+from datetime import date as _date
+import hashlib
 
+def _stable_seed_from_args(path: str, **kwargs) -> int:
+    """
+    Build a stable integer seed from:
+      - today's date
+      - route path
+      - filter arguments (q, category, theme, age, difficulty, etc.)
+    This makes the story order stable for a given day + filter combo.
+    """
+
+    # Use our own date alias so we don't depend on datetime.date,
+    # which may have been overwritten somewhere else.
+    today = _date.today().isoformat()
+
+    # Build a simple string payload
+    parts = [path, today]
+    for k in sorted(kwargs.keys()):
+        parts.append(f"{k}={kwargs[k]}")
+
+    seed_str = "|".join(str(p) for p in parts)
+
+    # Hash → int for use with random.seed(...)
+    digest = hashlib.sha256(seed_str.encode("utf-8")).hexdigest()
+    # Take first 12 hex chars for a stable, bounded integer
+    return int(digest[:12], 16)
+
+
+import datetime
+import math
+
+def _approx_read_minutes(text: str, default: int = 5) -> int:
+    """
+    Rough estimate of reading time based on word count.
+    Clamp between 3 and 15 minutes.
+    """
+    words = len((text or "").split())
+    if words <= 0:
+        return default
+    minutes = max(3, min(15, math.ceil(words / 80)))
+    return minutes
+
+def fetch_db_stories_for_browser(
+    db,
+    q: str | None,
+    category: str | None,
+    theme: str | None,
+    age: int | None,
+    difficulty: int | None,
+    limit: int = 200,
+):
+    """
+    Load GPT-generated (or otherwise DB-backed) stories that already
+    have full content, applying the same filters as the /stories page.
+    Returns a list of dicts shaped like MOCK_CATALOG items
+    (so stories.html can render them the same way).
+    """
+    where = ["COALESCE(NULLIF(content, ''), '') <> ''"]
+    params: list = []
+
+    # Optional: only auto-seeded / GPT stories
+    # (comment this out if you want to include all providers)
+    # where.append("provider = ?")
+    # params.append("gpt")
+
+    if q:
+        like = f"%{q}%"
+        where.append("(title LIKE ? OR content LIKE ?)")
+        params.extend([like, like])
+
+    if category:
+        where.append("categories LIKE ?")
+        params.append(f"%{category}%")
+
+    if theme:
+        where.append("themes LIKE ?")
+        params.append(f"%{theme}%")
+
+    if age is not None:
+        # age between age_min and age_max
+        where.append("(age_min <= ? AND age_max >= ?)")
+        params.extend([age, age])
+
+    if difficulty is not None:
+        where.append("(difficulty = ?)")
+        params.append(difficulty)
+
+    sql = f"""
+        SELECT
+            slug, title, author,
+            age_min, age_max, difficulty,
+            categories, themes,
+            provider, provider_id,
+            content, created_at
+        FROM stories
+        WHERE {" AND ".join(where)}
+        ORDER BY datetime(created_at) DESC
+        LIMIT ?
+    """
+    params.append(limit)
+
+    rows = db.execute(sql, params).fetchall()
+    out = []
+
+    for r in rows:
+        try:
+            cats = json.loads(r["categories"]) if r["categories"] else []
+        except Exception:
+            cats = []
+        try:
+            ths = json.loads(r["themes"]) if r["themes"] else []
+        except Exception:
+            ths = []
+
+        content = r["content"] or ""
+        read_minutes = _approx_read_minutes(content, default=5)
+
+        # Simple tagline fallback if we don't have a stored one
+        if ths:
+            tagline = f"A story about {ths[0].lower()}."
+        elif cats:
+            tagline = f"A {cats[0].lower()} story."
+        else:
+            tagline = ""
+
+        out.append({
+            "slug": r["slug"],
+            "title": r["title"] or "(Untitled)",
+            "author": r["author"] or "Interlang AI",
+            "age_min": r["age_min"] or 8,
+            "age_max": r["age_max"] or (r["age_min"] or 10),
+            "difficulty": r["difficulty"] or 3,
+            "categories": cats,
+            "themes": ths,
+            "provider": r["provider"] or "gpt",
+            "provider_id": r["provider_id"] or r["slug"],
+            "tagline": tagline,
+            "read_minutes": read_minutes,
+            # stories.html also reads s.category_icon; just leave None
+            "category_icon": None,
+        })
+    return out
 @app.route("/stories", methods=["GET"])
 def stories():
     if "username" not in session:
@@ -230,52 +411,96 @@ def stories():
     username = session["username"]
     db = get_db()
 
-    # user header (unchanged)
-    u = db.execute("SELECT level, xp, title_code FROM users WHERE username=?", (username,)).fetchone()
+    # --- user header ---
+    u = db.execute(
+        "SELECT level, xp, title_code FROM users WHERE username=?",
+        (username,),
+    ).fetchone()
     user_level = u["level"] if u else 1
-    user_xp    = u["xp"] if u else 0
-    title_info = TITLES.get((u["title_code"] or ""), DEFAULT_TITLE)
+    user_xp = u["xp"] if u else 0
+    title_info = TITLES.get((u["title_code"] or "") if u else "", DEFAULT_TITLE)
     display_title = title_info["title"]
-    title_icon    = title_info["icon"]
+    title_icon = title_info["icon"]
 
-    # filters
-    q        = (request.args.get("q") or "").strip()
+    # --- filters ---
+    q = (request.args.get("q") or "").strip()
     category = (request.args.get("category") or "").strip()
-    theme    = (request.args.get("theme") or "").strip()
+    theme = (request.args.get("theme") or "").strip()
+
     try:
         age = int(request.args.get("age")) if request.args.get("age") else None
-    except:
+    except Exception:
         age = None
+
     try:
         difficulty = int(request.args.get("difficulty")) if request.args.get("difficulty") else None
-    except:
+    except Exception:
         difficulty = None
 
-    # NEW: optional "ready only" toggle
+    # optional "ready only" toggle (kept for compatibility, but we also enforce image+content below)
     ready_only = (request.args.get("ready") == "1")
 
-    # pagination inputs
+    # --- pagination inputs ---
     try:
         page = max(1, int(request.args.get("page", 1)))
-    except:
+    except Exception:
         page = 1
-    PAGE_SIZE = 12
+
+    # SHOW 6 STORIES PER PAGE
+    PAGE_SIZE = 6
     MAX_PAGES = 5
 
-    # fetch all matches (no limit), then ensure records exist
-    items_all = recommend_stories(
-        age=age, difficulty=difficulty, q=q or None,
-        category=category or None, theme=theme or None, limit=None
+    # ---------------------------------------------
+    # 1) Load DB-backed stories (including GPT seed)
+    # ---------------------------------------------
+    db_items = fetch_db_stories_for_browser(
+        db=db,
+        q=q or None,
+        category=category or None,
+        theme=theme or None,
+        age=age,
+        difficulty=difficulty,
+        limit=200,
     )
-    for s in items_all:
+
+    db_slugs = {s["slug"] for s in db_items}
+
+    # ---------------------------------------------
+    # 2) Load catalog-based stories (MOCK_CATALOG)
+    # ---------------------------------------------
+    catalog_items = recommend_stories(
+        age=age,
+        difficulty=difficulty,
+        q=q or None,
+        category=category or None,
+        theme=theme or None,
+        limit=None,
+    )
+
+    # ensure catalog items exist in DB
+    for s in catalog_items:
         try:
             ensure_story_record(s["slug"], s)
         except Exception:
-            pass
+            pass  # best-effort
 
-    # Identify which are already generated (content non-empty)
-    generated = set()
-    slugs = tuple(s["slug"] for s in items_all)
+    # ---------------------------------------------
+    # 3) Merge DB stories + catalog stories
+    #    DB stories first, then catalog stories whose slug
+    #    is not already in the DB list
+    # ---------------------------------------------
+    items_all = list(db_items) + [
+        s for s in catalog_items if s["slug"] not in db_slugs
+    ]
+
+    # ---------------------------------------------
+    # 4) Figure out which slugs are "generated"
+    #    (have non-empty content in DB)
+    # ---------------------------------------------
+    generated = set(db_slugs)  # all db_items have content
+
+    # also mark catalog stories that already have content
+    slugs = tuple({s["slug"] for s in catalog_items})
     if slugs:
         qmarks = ",".join(["?"] * len(slugs))
         rows = db.execute(
@@ -284,36 +509,71 @@ def stories():
             WHERE slug IN ({qmarks})
               AND COALESCE(NULLIF(content,''), '') <> ''
             """,
-            slugs
+            slugs,
         ).fetchall()
-        generated = {r["slug"] for r in rows}
+        generated |= {r["slug"] for r in rows}
 
-    # If user asked for "ready only", filter here
+    # ---------------------------------------------
+    # 5) Attach cover_path and filter:
+    #    keep ONLY stories that have content AND a cover image
+    # ---------------------------------------------
+    covers_dir = os.path.join(app.root_path, "static", "covers")
+    filtered_items = []
+    for s in items_all:
+        slug = s.get("slug")
+        if not slug:
+            continue
+
+        filename = f"{slug}.png"
+        abs_path = os.path.join(covers_dir, filename)
+
+        if os.path.exists(abs_path):
+            s["cover_path"] = f"covers/{filename}"
+        else:
+            s["cover_path"] = None
+
+        # must have text content (generated) AND a cover image
+        if slug in generated and s["cover_path"]:
+            filtered_items.append(s)
+
+    # if someone explicitly uses ready=1, this still behaves consistently
     if ready_only:
-        items_all = [s for s in items_all if s["slug"] in generated]
+        filtered_items = [s for s in filtered_items if s["slug"] in generated]
 
-    # ✅ NEW: Randomize ordering, but generated first
-    from datetime import date
-    import random
+    # ---------------------------------------------
+    # 6) Stable shuffle: generated (with cover) first
+    # ---------------------------------------------
+    # at this point, all filtered_items are both "generated" and "with cover",
+    # but we keep the stable shuffle logic in case you later relax filters
+    gen_items = [s for s in filtered_items if s["slug"] in generated]
+    other_items = [s for s in filtered_items if s["slug"] not in generated]
 
-    gen_items   = [s for s in items_all if s["slug"] in generated]
-    other_items = [s for s in items_all if s["slug"] not in generated]
-
-    # stable seed
-    seed_str = f"{date.today().isoformat()}|{username}|{q}|{category}|{theme}|{age}|{difficulty}"
-    rng = random.Random(seed_str)
-
+    seed = _stable_seed_from_args(
+        path="/stories",
+        username=username,
+        q=q,
+        category=category,
+        theme=theme,
+        age=age,
+        difficulty=difficulty,
+    )
+    rng = random.Random(seed)
     rng.shuffle(gen_items)
     rng.shuffle(other_items)
 
     items_all = gen_items + other_items
 
-    # paginate with a hard cap of 5 pages
+    # ---------------------------------------------
+    # 7) Pagination with hard cap (6 per page)
+    # ---------------------------------------------
     total_items = len(items_all)
-    total_pages = min(MAX_PAGES, max(1, (total_items + PAGE_SIZE - 1) // PAGE_SIZE))
+    total_pages = min(
+        MAX_PAGES,
+        max(1, (total_items + PAGE_SIZE - 1) // PAGE_SIZE),
+    )
     page = min(page, total_pages)
     start = (page - 1) * PAGE_SIZE
-    end   = start + PAGE_SIZE
+    end = start + PAGE_SIZE
     items = items_all[start:end]
 
     return render_template(
@@ -323,12 +583,28 @@ def stories():
         user_xp=user_xp,
         display_title=display_title,
         title_icon=title_icon,
+        # main list
         items=items,
-        q=q, category=category, theme=theme, age=age, difficulty=difficulty,
-        page=page, total_pages=total_pages, page_size=PAGE_SIZE, total_items=total_items,
+        stories=items,
+        # filters
+        q=q,
+        category=category,
+        theme=theme,
+        age=age,
+        difficulty=difficulty,
+        # paging
+        page=page,
+        total_pages=total_pages,
+        page_size=PAGE_SIZE,
+        total_items=total_items,
+        total_count=total_items,
+        # generation status
         generated_slugs=generated,
-        ready_only=ready_only
+        generated_count=len(generated),
+        ready_only=ready_only,
     )
+
+
 
 def seed_achievements(db):
     # tables
@@ -2133,6 +2409,93 @@ def api_define():
         payload["bookmarked"] = bookmarked
     return payload
 
+import base64
+import os
+from pathlib import Path
+def ensure_story_cover_image(
+    slug: str,
+    title: str,
+    content: str,
+    age_min: int,
+    age_max: int,
+    provider: str | None = None,
+    main_character_type: str | None = None,
+) -> str | None:
+    """
+    Ensure there is a watercolor cover image for a story.
+
+    Returns the relative path under `static/` (e.g. "covers/slug.png") or None.
+    `main_character_type` is used to steer the illustration:
+      - "child"    -> human child
+      - "animal"   -> animal protagonist
+      - "creature" -> robot / fantasy creature
+      - None       -> generic from the story
+    """
+    # Only generate for GPT stories (or if provider unspecified)
+    if provider and provider.lower() != "gpt":
+        return None
+
+    # Where we save covers
+    covers_dir = Path(app.static_folder or "static") / "covers"
+    covers_dir.mkdir(parents=True, exist_ok=True)
+    out_path = covers_dir / f"{slug}.png"
+
+    # If it already exists, just return the relative path
+    if out_path.exists():
+        return str(Path("covers") / out_path.name)
+
+    # Derive a shortish story summary for the prompt
+    body = (content or "").strip()
+    story_snippet = body[:800] if len(body) > 800 else body
+
+    # Character description for the illustration
+    if main_character_type == "animal":
+        char_desc = (
+            f"Main focus: a cute non-human animal protagonist that fits the story "
+            f"(for example, a fox, rabbit, or puppy). "
+            "No realistic human faces in the center of the image. "
+        )
+    elif main_character_type == "creature":
+        char_desc = (
+            "Main focus: a friendly non-human creature or robot protagonist that "
+            "matches the story (e.g., a dragon, robot, or fairy). "
+            "The character should look kind and approachable, not scary. "
+        )
+    elif main_character_type == "child":
+        char_desc = (
+            f"Main focus: a human child around {age_min}-{age_max} years old who fits "
+            "the vibe of the story. "
+        )
+    else:
+        char_desc = (
+            "Main focus: the main character(s) from the story in a single clear scene. "
+        )
+
+    prompt = (
+        "Watercolor illustration, soft pastel colors, children's storybook cover. "
+        f"{char_desc}"
+        f"The scene should reflect this story: {story_snippet} "
+        "No text on the image. Cute, warm, gentle style suitable for young readers."
+    )
+
+    try:
+        img_resp = openai_client.images.generate(
+            model="gpt-image-1",
+            prompt=prompt,
+            size="1024x1024",
+            n=1,
+        )
+        b64 = img_resp.data[0].b64_json
+        raw = base64.b64decode(b64)
+
+        with open(out_path, "wb") as f:
+            f.write(raw)
+
+        return str(Path("covers") / out_path.name)
+    except Exception as e:
+        print("Cover generation failed:", e)
+        return None
+
 @app.get("/story/<slug>")
 def read_story(slug):
     if "username" not in session:
@@ -2169,19 +2532,19 @@ def read_story(slug):
             age_max=age_max,
             difficulty=difficulty,
             categories=cats,
-            themes=ths
+            themes=ths,
         )
 
         meta = {
             "slug": slug,
             "title": title,
-            "author": "GPT",
+            "author": "Interlang AI",
             "age_min": age_min,
             "age_max": age_max,
             "difficulty": difficulty,
             "categories": cats,
             "themes": ths,
-            "provider": "gpt",
+            "provider": "Interlang AI",
             "provider_id": slug,
             "content": content,
         }
@@ -2192,12 +2555,36 @@ def read_story(slug):
     content = (row["content"] or "").strip()
     provider = (row["provider"] or "").strip().lower()
 
+    content = (row["content"] or "").strip()
+    provider = (row["provider"] or "").strip().lower()
+
     def _parse_json_list(s):
         try:
             v = json.loads(s or "[]")
             return v if isinstance(v, list) else []
         except Exception:
             return []
+
+    cats = _parse_json_list(row["categories"])
+    ths = _parse_json_list(row["themes"])
+
+    needs_gen = (not content) or (provider != "gpt")
+    if needs_gen:
+        content = gpt_generate_story(
+            title=row["title"] or "Story",
+            age_min=row["age_min"] or 8,
+            age_max=row["age_max"] or ((row["age_min"] or 8) + 4),
+            difficulty=row["difficulty"] or 2,
+            categories=cats,
+            themes=ths,
+        )
+        db.execute(
+            "UPDATE stories SET content=?, provider='gpt' WHERE id=?",
+            (content, row["id"])
+        )
+        db.commit()
+        row = db.execute("SELECT * FROM stories WHERE id=?", (row["id"],)).fetchone()
+        provider = (row["provider"] or "").strip().lower()
 
     cats = _parse_json_list(row["categories"])
     ths  = _parse_json_list(row["themes"])
@@ -2210,21 +2597,35 @@ def read_story(slug):
             age_max=row["age_max"] or ((row["age_min"] or 8) + 4),
             difficulty=row["difficulty"] or 2,
             categories=cats,
-            themes=ths
+            themes=ths,
         )
         db.execute("UPDATE stories SET content=?, provider='gpt' WHERE id=?", (content, row["id"]))
         db.commit()
         row = db.execute("SELECT * FROM stories WHERE id=?", (row["id"],)).fetchone()
+        provider = (row["provider"] or "").strip().lower()
 
-    # --- vocabulary extraction & notebook save ---
+    # --- NEW: generate / ensure cover image for this GPT story ---
+    cover_path = ensure_story_cover_image(
+        slug=row["slug"],
+        title=row["title"] or "Story",
+        content=content,
+        age_min=row["age_min"],
+        age_max=row["age_max"],
+        provider=provider,
+    )
+
+    # --- vocabulary extraction & notebook save (unchanged) ---
     vocab = pick_vocab_from_text(content, max_words=14)
     for w in vocab:
         ko, defin = dict_lookup_en_ko(w)
         try:
-            db.execute("""
-              INSERT OR IGNORE INTO vocab(username, word, translation, definition, source_story_id)
-              VALUES(?,?,?,?,?)
-            """, (username, w, ko or "", defin or "", row["id"]))
+            db.execute(
+                """
+                INSERT OR IGNORE INTO vocab(username, word, translation, definition, source_story_id)
+                VALUES(?,?,?,?,?)
+                """,
+                (username, w, ko or "", defin or "", row["id"]),
+            )
         except Exception:
             pass
 
@@ -2232,73 +2633,126 @@ def read_story(slug):
     db.execute("INSERT INTO story_reads(username, story_id) VALUES(?,?)", (username, row["id"]))
     db.commit()
 
-    return render_template("story.html", story=row, content=content, vocab=vocab)
-
-def gpt_generate_story(title: str,
-                       age_min: int = 8,
-                       age_max: int = 12,
-                       difficulty: int = 2,
-                       categories: list[str] | None = None,
-                       themes: list[str] | None = None) -> str:
-    """
-    Returns plain-text story. First line is the title, then paragraphs separated by blank lines.
-    Falls back to synthesize_story_text if GPT is unavailable.
-    """
-    categories = categories or []
-    themes = themes or []
-    level_map = {
-        1: ("CEFR A1", "550–700"),
-        2: ("CEFR A2", "650–850"),
-        3: ("CEFR B1", "800–1000"),
-        4: ("CEFR B1+", "900–1100"),
-        5: ("CEFR B2", "1000–1200"),
-    }
-    level_tag, target_len = level_map.get(int(difficulty or 2))
-
-    if not openai_client:
-        return synthesize_story_text(difficulty or 2, title or "Story")
-
-    level_map = {
-        1: ("CEFR A1", "700–1100"),  # was 250–400
-        2: ("CEFR A2", "1000–1500"),  # was 350–550
-        3: ("CEFR B1", "1400–2000"),  # was 500–700
-        4: ("CEFR B1+", "1800–2400"),  # was 600–800
-        5: ("CEFR B2", "2100–2700"),  # was 700–900
-    }
-
-    system = (
-        "You are an ESL children's story writer. "
-        "Output ONLY the story text: the first line must be the exact title, "
-        "then 9–14 short paragraphs separated by blank lines. No extra commentary."
+    return render_template(
+        "story.html",
+        story=row,
+        content=content,
+        vocab=vocab,
+        cover_path=cover_path,   # you can use this in story.html if you want
     )
-    user = f"""
-Write an original English short story.
 
-Title: {title or "Story"}
-Audience age: {age_min}-{age_max}
-Difficulty: {level_tag} (approx {difficulty}/5)
-Target length: {target_len} words total.
-Style: Warm, friendly, age-appropriate; simple, clear vocabulary matching difficulty.
-Structure: 3–6 short paragraphs. Use active voice. Avoid slang and idioms that are too advanced.
-Safety: Avoid violence, romance, religion, politics, and anything scary.
+def gpt_generate_story(
+    title: str,
+    age_min: int = 8,
+    age_max: int = 12,
+    difficulty: int = 2,
+    categories: list[str] | None = None,
+    themes: list[str] | None = None,
+    character_type: str | None = None,
+) -> str:
+    """
+    Ask GPT to write a single children's story as plain text.
 
-Optional categories: {", ".join(categories) if categories else "n/a"}
-Optional themes: {", ".join(themes) if themes else "n/a"}
+    character_type:
+      - "child"    -> human child protagonist
+      - "animal"   -> non-human animal protagonist
+      - "creature" -> robot / fantasy creature protagonist
+      - None       -> no explicit constraint
+    """
+    # Clamp and clean inputs
+    try:
+        d = int(difficulty)
+    except Exception:
+        d = 2
+    d = max(1, min(5, d))
+
+    try:
+        a1 = int(age_min)
+        a2 = int(age_max)
+    except Exception:
+        a1, a2 = 8, 12
+    if a1 > a2:
+        a1, a2 = a2, a1
+
+    cats = [c.strip() for c in (categories or []) if c.strip()]
+    ths  = [t.strip() for t in (themes or []) if t.strip()]
+
+    # Map difficulty -> CEFR-ish description + target word range (just guidance)
+    level_map = {
+        1: ("around CEFR A1",  "700–1100"),
+        2: ("around CEFR A2",  "1100–1600"),
+        3: ("around CEFR B1-", "1600–2100"),
+        4: ("around CEFR B1",  "2100–2400"),
+        5: ("around CEFR B2",  "2400–2800"),
+    }
+    level_label, target_len_str = level_map.get(d, level_map[2])
+
+    # Main-character constraint text
+    if character_type == "animal":
+        mc_line = (
+            "- The main character must be a non-human animal "
+            "(e.g., fox, rabbit, puppy). Do NOT make a human child "
+            "the main character.\n"
+        )
+    elif character_type == "creature":
+        mc_line = (
+            "- The main character must be a friendly non-human creature "
+            "(e.g., robot, dragon, fairy). Avoid realistic humans as the main focus.\n"
+        )
+    elif character_type == "child":
+        mc_line = (
+            "- The main character should be a human child around "
+            f"{a1}-{a2} years old.\n"
+        )
+    else:
+        mc_line = ""
+
+    system_msg = (
+        "You are a children's story writer. "
+        "You write warm, age-appropriate stories with clear structure and "
+        "vocabulary suitable for the target readers."
+    )
+
+    cat_text = ", ".join(cats) if cats else "any suitable category"
+    theme_text = ", ".join(ths) if ths else "any positive themes (e.g., courage, kindness)"
+
+    user_msg = f"""
+Write a children's story with the following constraints:
+
+- Target readers: ages {a1}–{a2}, {level_label}.
+- Target length: about {target_len_str} words in total.
+- Categories / setting: {cat_text}.
+- Themes: {theme_text}.
+{mc_line}
+Story requirements:
+- The tone should be warm, hopeful, and suitable for kids.
+- Avoid scary, violent, or sad endings.
+- Use slightly simpler vocabulary for younger children and richer words for older children.
+- Give the story a clear beginning, middle conflict, and satisfying resolution.
+
+Use the given title if it is provided; otherwise, choose a suitable title yourself.
+
+Output format (plain text):
+1. First line: the final title of the story.
+2. Then one blank line.
+3. Then the full story text in paragraphs.
 """
+
     try:
         resp = openai_client.chat.completions.create(
             model=OPENAI_MODEL,
-            temperature=0.8,
-            messages=[{"role": "system", "content": system},
-                      {"role": "user", "content": user}],
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg},
+            ],
         )
-        text = (resp.choices[0].message.content or "").strip()
-        # basic sanity fallback if response is too short
-        if len(text.split()) < 120:
-            text += "\n\n" + synthesize_story_text(difficulty or 2, title or "Story")
-        return text
-    except Exception:
-        return synthesize_story_text(difficulty or 2, title or "Story")
+        text = resp.choices[0].message.content or ""
+        return text.strip()
+    except Exception as e:
+        print("GPT story generation error:", e)
+        # Fallback: simple synthesized text so the route doesn't crash
+        return synthesize_story_text(difficulty=d, title=title or "Story Title")
+
 
 # -------------------- Helpers for lines and achievements --------------------
 def compute_completed_lines(correct_positions):
@@ -3741,65 +4195,113 @@ def admin_fetch_submission(submission_id: int):
     })
 @app.post("/admin/worksheets/review/<int:submission_id>")
 def admin_save_submission_review(submission_id: int):
+    """
+    Save (or update) the review for a single career_submissions row.
+
+    Expected JSON body:
+    {
+      "score": 85,
+      "comment": "Great reflection, but elaborate on Q3.",
+      "items": [
+        {"question_id": 1, "score": 5, "comment": "Clear answer"},
+        {"question_id": 2, "score": 3, "comment": "Needs more detail"},
+        ...
+      ]
+    }
+    """
     if "username" not in session:
-        return jsonify({"error": "auth required"}), 401
-    db = get_db()
+        return jsonify({"ok": False, "error": "auth required"}), 401
+
+    reviewer = session.get("username", "admin")
 
     data = request.get_json(silent=True) or {}
-    final_score = int(data.get("score") or 0)
+    try:
+        final_score = int(data.get("score", 0))
+    except Exception:
+        final_score = 0
     overall_comment = (data.get("comment") or "").strip()
+    items = data.get("items") or []
 
-    # Accept either `items=[{key,points,comment}]` or `per_item_feedback=[{index,comment}]`
-    items = data.get("items")
-    if items is None:
-        pif = data.get("per_item_feedback") or []
-        items = [{"key": f"Q{it.get('index')}", "points": None, "comment": it.get("comment", "")} for it in pif]
+    db = get_db()
 
-    # Upsert review header
-    rev = db.execute("SELECT id FROM career_reviews WHERE submission_id=?", (submission_id,)).fetchone()
-    if rev:
-        db.execute("""
-            UPDATE career_reviews
-               SET score=?, comment=?, reviewed_at=CURRENT_TIMESTAMP
-             WHERE id=?
-        """, (final_score, overall_comment, rev["id"]))
-        review_id = rev["id"]
-    else:
-        cur = db.execute("""
-            INSERT INTO career_reviews(submission_id, score, comment, reviewed_at)
-            VALUES(?,?,?,CURRENT_TIMESTAMP)
-        """, (submission_id, final_score, overall_comment))
-        review_id = cur.lastrowid
+    # --- 1) Make sure the submission exists and get worksheet_id for redirect ---
+    row = db.execute(
+        "SELECT id, worksheet_id FROM career_submissions WHERE id = ?",
+        (submission_id,),
+    ).fetchone()
+    if row is None:
+        return jsonify({"ok": False, "error": "submission not found"}), 404
 
-    # Ensure unique index for upsert (safe to run every time)
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS career_review_items(
-            id INTEGER PRIMARY KEY,
-            review_id INTEGER NOT NULL,
-            qkey TEXT NOT NULL,
-            points REAL,
-            comment TEXT,
-            UNIQUE(review_id, qkey)
+    worksheet_id = row["worksheet_id"]
+
+    # --- 2) Remove any previous review & per-item feedback for this submission ---
+    old_review = db.execute(
+        "SELECT id FROM career_reviews WHERE submission_id = ?",
+        (submission_id,),
+    ).fetchone()
+    if old_review is not None:
+        db.execute(
+            "DELETE FROM career_review_items WHERE review_id = ?",
+            (old_review["id"],),
         )
-    """)
-    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_review_items_unique ON career_review_items(review_id, qkey)")
+        db.execute(
+            "DELETE FROM career_reviews WHERE id = ?",
+            (old_review["id"],),
+        )
 
-    # Upsert per-question items
-    for it in (items or []):
-        qkey = (it.get("key") or "").strip()
-        if not qkey:
+    # --- 3) Insert the new review header row ---
+    cur = db.execute(
+        """
+        INSERT INTO career_reviews(submission_id, reviewer, score, comment, reviewed_at)
+        VALUES(?,?,?,?,CURRENT_TIMESTAMP)
+        """,
+        (submission_id, reviewer, final_score, overall_comment),
+    )
+    review_id = cur.lastrowid
+
+    # --- 4) Insert per-item feedback (optional) ---
+    for item in items:
+        # "question_id" should be an integer id for the question in that week
+        qid = item.get("question_id")
+        if qid is None:
             continue
-        pts = it.get("points")
-        cmt = (it.get("comment") or "").strip()
-        db.execute("""
-            INSERT INTO career_review_items(review_id, qkey, points, comment)
+        try:
+            qid = int(qid)
+        except Exception:
+            continue
+
+        item_score = item.get("score")
+        try:
+            item_score = int(item_score) if item_score is not None else None
+        except Exception:
+            item_score = None
+
+        comment = (item.get("comment") or "").strip()
+
+        db.execute(
+            """
+            INSERT INTO career_review_items(review_id, question_id, score, comment)
             VALUES(?,?,?,?)
-            ON CONFLICT(review_id, qkey)
-            DO UPDATE SET points=excluded.points, comment=excluded.comment
-        """, (review_id, qkey, pts, cmt))
+            """,
+            (review_id, qid, item_score, comment),
+        )
 
     db.commit()
-    return jsonify({"ok": True, "review_id": review_id})
+
+    # Frontend is using AJAX, so return JSON; the overview page will re-load
+    return jsonify(
+        {
+            "ok": True,
+            "review": {
+                "id": review_id,
+                "score": final_score,
+                "comment": overall_comment,
+                "worksheet_id": worksheet_id,
+                "submission_id": submission_id,
+            },
+        }
+    )
+
 
 
 
@@ -4750,91 +5252,138 @@ def career():
 
     # GET
     return render_template("career_form.html")
-
 @app.get("/career/<int:ws_id>/overview")
-def career_overview(ws_id):
-    if "username" not in session:
-        return redirect(url_for("login"))
-    username = session["username"]
-
+def career_overview(ws_id: int):
     db = get_db()
 
-    # Load worksheet
-    row = db.execute("""
-        SELECT id, username, job, level, created_at, payload
+    # ---- 1) Load worksheet meta ----
+    ws_row = db.execute(
+        """
+        SELECT id, username, created_at,
+               COALESCE(payload, '{}') AS payload_json
         FROM career_worksheets
-        WHERE id=?
-    """, (ws_id,)).fetchone()
+        WHERE id = ?
+        """,
+        (ws_id,),
+    ).fetchone()
 
-    if not row or row["username"] != username:
-        flash("Worksheet not found.", "danger")
-        return redirect(url_for("career"))
+    if ws_row is None:
+        abort(404)
 
-    payload = json.loads(row["payload"])
-    unlocks = compute_week_unlocks(row["created_at"], weeks=4)
+    try:
+        payload = json.loads(ws_row["payload_json"])
+    except Exception:
+        payload = {}
 
-    # Load all submissions & reviews for this worksheet
-    subs = db.execute("""
+    job = payload.get("job", "")
+    level = payload.get("level", payload.get("_level", ""))
+
+    # ---- 1b) Compute unlock states for weeks 1–4 ----
+    unlock_states = compute_week_unlocks(ws_row["created_at"], weeks=4)
+    unlock_by_week = {s["week"]: s for s in unlock_states}
+
+    # ---- 2) Load submissions + any associated reviews ----
+    rows = db.execute(
+        """
         SELECT
-            id AS submission_id,
-            week,
-            submitted_at,
-            review_score,
-            review_comment,
-            reviewed_at
-        FROM career_submissions
-        WHERE worksheet_id=? AND username=?
-    """, (ws_id, username)).fetchall()
+            s.id             AS submission_id,
+            s.week           AS week,
+            s.submitted_at   AS submitted_at,
+            s.review_score   AS emb_score,
+            s.review_comment AS emb_comment,
+            s.reviewed_at    AS emb_reviewed_at,
+            r.score          AS rv_score,
+            r.comment        AS rv_comment,
+            r.reviewed_at    AS rv_reviewed_at
+        FROM career_submissions AS s
+        LEFT JOIN career_reviews AS r
+          ON r.submission_id = s.id
+        WHERE s.worksheet_id = ?
+        ORDER BY s.week ASC, s.submitted_at DESC
+        """,
+        (ws_id,),
+    ).fetchall()
 
-    # Put submissions into a dict for fast lookup
-    sub_map = {}
-    for s in subs:
-        sub_map[s["week"]] = {
-            "submitted": True,
-            "submission_id": s["submission_id"],
-            "submitted_at": s["submitted_at"],
-            "review": {
-                "score": s["review_score"],
-                "comment": s["review_comment"],
-                "reviewed_at": s["reviewed_at"]
-            } if s["review_score"] is not None else None
-        }
+    # Keep only the latest submission per week
+    latest_by_week = {}
+    for row in rows:
+        wk = row["week"]
+        if wk not in latest_by_week:
+            latest_by_week[wk] = row  # ordered by submitted_at DESC
 
-    # ===== Build weeks_vm with submission + review status =====
+    # ---- 3) Build weeks_vm for weeks 1–4 ----
     weeks_vm = []
+    for wk in range(1, 5):
+        info = latest_by_week.get(wk)
 
-    for st in unlocks:
-        wk = st["week"]
+        # unlock info for this week
+        st = unlock_by_week.get(wk)
+        if st:
+            is_unlocked = st["is_unlocked"]
+            unlock_at_str = _fmt_kst(st["unlock_at"])
+        else:
+            # fallback: treat as unlocked with empty label
+            is_unlocked = True
+            unlock_at_str = ""
 
-        item = {
-            "week": wk,
-            "title": payload["weeks"][wk-1].get("title", f"Week {wk}"),
-            "unlock_at_str": _fmt_kst(st["unlock_at"]),
-            "is_unlocked": st["is_unlocked"],
+        if info is None:
+            weeks_vm.append(
+                {
+                    "week": wk,
+                    "submitted": False,
+                    "submitted_at": None,
+                    "submission_id": None,
+                    "review": None,
+                    "is_unlocked": is_unlocked,
+                    "unlock_at_str": unlock_at_str,
+                }
+            )
+            continue
 
-            # default values
-            "submitted": False,
-            "submitted_at": None,
-            "submission_id": None,
-            "review": None
-        }
+        # coalesce separate table values over embedded ones
+        score = info["rv_score"] if info["rv_score"] is not None else info["emb_score"]
+        comment = (
+            info["rv_comment"]
+            if info["rv_comment"] is not None
+            else info["emb_comment"]
+        )
+        reviewed_at = (
+            info["rv_reviewed_at"]
+            if info["rv_reviewed_at"] is not None
+            else info["emb_reviewed_at"]
+        )
 
-        if wk in sub_map:
-            item["submitted"] = True
-            item["submitted_at"] = sub_map[wk]["submitted_at"]
-            item["submission_id"] = sub_map[wk]["submission_id"]
-            item["review"] = sub_map[wk]["review"]    # None or {score, comment, reviewed_at}
+        review = None
+        if score is not None or comment is not None or reviewed_at is not None:
+            review = {
+                "score": score,
+                "comment": comment,
+                "reviewed_at": reviewed_at,
+            }
 
-        weeks_vm.append(item)
+        weeks_vm.append(
+            {
+                "week": wk,
+                "submitted": True,
+                "submitted_at": info["submitted_at"],
+                "submission_id": info["submission_id"],
+                "review": review,
+                "is_unlocked": is_unlocked,
+                "unlock_at_str": unlock_at_str,
+            }
+        )
 
+    created_at = ws_row["created_at"]
     return render_template(
         "career_overview_4w.html",
-        ws_id=row["id"],
-        job=payload.get("job",""),
-        level=payload.get("_level", row["level"]),
-        created_at=row["created_at"],
-        weeks_vm=weeks_vm
+        ws_id=ws_id,
+        job=job,
+        level=level,
+        created_at=created_at,
+        weeks_vm=weeks_vm,
     )
+
+
 
 # routes.py (or wherever you define routes)
 from flask import Blueprint, render_template, request, session, redirect, url_for, flash, jsonify
@@ -5215,36 +5764,6 @@ def career_submit(ws_id, week):
     return redirect(url_for("career_overview", ws_id=ws_id))
 
 
-from flask import abort
-# ===== Admin: save review (used by the Review modal) =====
-@app.post("/admin/review/<int:submission_id>")
-def admin_review_save(submission_id: int):
-    if "username" not in session:
-        return jsonify({"error": "auth required"}), 401
-    # if not is_admin(): return jsonify({"error": "forbidden"}), 403
-
-    data = request.get_json(silent=True) or {}
-    try:
-        score = int(data.get("score", 0))
-    except Exception:
-        score = 0
-    comment = (data.get("comment") or "").strip()
-    per_item = data.get("per_item_feedback") or []  # list[{index:int, comment:str}]
-
-    db = get_db()
-    db.execute(
-        """
-        UPDATE career_submissions
-           SET review_score = ?,
-               review_comment = ?,
-               review_item_json = ?,
-               reviewed_at = datetime('now')
-         WHERE id = ?
-        """,
-        (score, comment, json.dumps(per_item, ensure_ascii=False), submission_id),
-    )
-    db.commit()
-    return jsonify({"ok": True})
 
 @app.get("/admin/career/<int:ws_id>/week/<int:week>")
 def admin_review_list(ws_id, week):
@@ -5275,43 +5794,69 @@ ORDER BY s.submitted_at DESC
 
     return render_template("admin_career_review.html",
                            ws=ws, week=week, subs=subs)
+from flask import abort, jsonify, request
+import json
 
-@app.post("/admin/career/review/<int:submission_id>")
-def admin_save_review(submission_id):
-    if "username" not in session or not is_admin():
-        abort(403)
-    reviewer = session["username"]
-    score = request.form.get("score", "").strip()
-    comment = request.form.get("comment", "").strip()
+# ===== Admin: save review (used by the Review modal) =====
+@app.post("/admin/review/<int:submission_id>")
+def admin_review_save(submission_id: int):
+    if "username" not in session:
+        return jsonify({"error": "auth required"}), 401
+    # if not is_admin(): return jsonify({"error": "forbidden"}), 403
 
+    data = request.get_json(silent=True) or {}
+
+    # score / comment
     try:
-        score_int = int(score)
-        if not (0 <= score_int <= 100):
-            raise ValueError
+        score = int(data.get("score", 0))
     except Exception:
-        flash("Score must be an integer 0–100.", "warning")
-        return redirect(request.referrer or url_for("home"))
+        score = 0
+    comment = (data.get("comment") or "").strip()
+
+    # support both per_item_feedback (new) and items (old) payloads
+    raw_items = data.get("per_item_feedback") or data.get("items") or []
+
+    per_item = []
+    for item in raw_items:
+        # New style: {"index": int, "comment": "..."}
+        if "index" in item and "comment" in item:
+            per_item.append(
+                {
+                    "index": int(item["index"]),
+                    "comment": (item["comment"] or "").strip(),
+                }
+            )
+        # Old style: {"key": "Q1", "comment": "...", ...}
+        elif "key" in item and "comment" in item:
+            key = str(item["key"])
+            idx = None
+            if key.startswith("Q"):
+                try:
+                    idx = int(key[1:])
+                except Exception:
+                    idx = None
+            per_item.append(
+                {
+                    "index": idx,
+                    "comment": (item["comment"] or "").strip(),
+                }
+            )
 
     db = get_db()
-    # Ensure submission exists
-    sub = db.execute("SELECT id, ws_id, week FROM career_submissions WHERE id=?", (submission_id,)).fetchone()
-    if not sub:
-        flash("Submission not found.", "danger")
-        return redirect(url_for("home"))
-
-    db.execute("""
-      INSERT INTO career_reviews(submission_id, reviewer, score, comment)
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(submission_id) DO UPDATE SET
-        reviewer=excluded.reviewer,
-        score=excluded.score,
-        comment=excluded.comment,
-        reviewed_at=CURRENT_TIMESTAMP
-    """, (submission_id, reviewer, score_int, comment))
+    db.execute(
+        """
+        UPDATE career_submissions
+           SET review_score    = ?,
+               review_comment  = ?,
+               review_item_json = ?,
+               reviewed_at     = datetime('now')
+         WHERE id = ?
+        """,
+        (score, comment, json.dumps(per_item, ensure_ascii=False), submission_id),
+    )
     db.commit()
+    return jsonify({"ok": True})
 
-    flash("Review saved.", "success")
-    return redirect(url_for("admin_review_list", ws_id=sub["ws_id"], week=sub["week"]))
 
 # Go to the most recent worksheet's overview, or to the generator form if none exist
 @app.get("/career/latest")
@@ -5863,6 +6408,316 @@ def admin_submission_json(submission_id: int):
         out["review"]["per_item"] = None
 
     return jsonify(out)
+
+
+
+AGE_CONFIGS = [
+    (6, 7, 180, "very simple sentences, sight words, lots of repetition"),
+    (7, 8, 260, "short sentences, basic connectors like 'and', 'but'"),
+    (8, 9, 350, "slightly longer sentences, some descriptive adjectives"),
+    (9, 10, 450, "more descriptive language, simple dialogue"),
+    (10, 12, 650, "richer vocabulary, more complex sentences and feelings"),
+]
+
+DIFFICULTIES = [1, 2, 3, 4, 5]
+
+CATEGORIES = [
+    "Animals", "Friendship", "Adventure", "Magic",
+    "School", "Space", "Family", "Mystery",
+]
+
+THEMES = [
+    "Courage", "Kindness", "Teamwork", "Problem solving",
+    "Imagination", "Responsibility", "Curiosity", "Perseverance",
+]
+
+
+def slugify_title(title: str) -> str:
+    """Simple slugify for titles (lowercase, hyphen-separated)."""
+    t = (title or "").lower()
+    t = t.replace("&", "and").replace("/", " ")
+    t = "".join(ch if ch.isalnum() else "-" for ch in t)
+    while "--" in t:
+        t = t.replace("--", "-")
+    t = t.strip("-")
+    return t or "story"
+
+
+def make_unique_slug(base_slug: str, existing_slugs: set[str]) -> str:
+    slug = base_slug
+    i = 2
+    while slug in existing_slugs:
+        slug = f"{base_slug}-{i}"
+        i += 1
+    return slug
+
+
+def pick_category_theme() -> tuple[list[str], list[str]]:
+    import random
+    cats = random.sample(CATEGORIES, k=random.randint(1, 3))
+    ths = random.sample(THEMES, k=random.randint(1, 3))
+    return cats, ths
+
+
+def generate_story_with_gpt(
+    age_min: int,
+    age_max: int,
+    target_words: int,
+    level_description: str,
+    difficulty: int,
+    categories: list[str],
+    themes: list[str],
+) -> dict:
+    """
+    Single-story version of your seed script logic.
+    Returns a dict with keys: title, tagline, body, reading_minutes.
+    """
+    import json as _json
+    import random as _random
+
+    if not openai_client:
+        raise RuntimeError("OpenAI client is not configured.")
+
+    reading_min = max(3, min(15, target_words // 80))
+
+    system_msg = (
+        "You are a children's story writer. "
+        "You write stories that are age-appropriate and vocabulary-aware. "
+        "You will output ONLY valid JSON, nothing else."
+    )
+
+    user_msg = f"""
+Write a children's story for ages {age_min}-{age_max}.
+
+Reading level:
+- {level_description}
+- Target length: about {target_words} words.
+- Difficulty level (1 easiest, 5 hardest): {difficulty}.
+
+Content requirements:
+- Categories: {", ".join(categories)}
+- Themes: {", ".join(themes)}
+- The main characters depending on the categories and themes.
+- The story should be warm, positive, and suitable for kids.
+- Use simple words for younger ages and richer language for older ages.
+- No scary or violent content.
+
+Output JSON with the following keys ONLY:
+{{
+  "title": "a short catchy title",
+  "tagline": "one short sentence that hooks the reader",
+  "body": "the full story text, with paragraphs separated by blank lines",
+  "reading_minutes": {reading_min}
+}}
+"""
+
+    resp = openai_client.chat.completions.create(
+        model=OPENAI_MODEL,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": user_msg},
+        ],
+    )
+
+    raw = resp.choices[0].message.content
+    data = _json.loads(raw)
+
+    data.setdefault("title", "Untitled Story")
+    data.setdefault("tagline", "")
+    data.setdefault("body", "")
+    data.setdefault("reading_minutes", reading_min)
+
+    return data
+@app.route("/admin/gpt-story", methods=["GET", "POST"])
+def admin_gpt_story():
+    # if not session.get("is_admin"):
+    #     abort(403)
+
+    db = get_db()
+    error: str | None = None
+    last_story: dict | None = None
+
+    if request.method == "POST":
+        form = request.form
+
+        raw_title = (form.get("title") or "").strip()
+        age_min_raw = form.get("age_min") or "7"
+        age_max_raw = form.get("age_max") or "9"
+        difficulty_raw = form.get("difficulty") or "3"
+        categories_raw = form.get("categories") or ""
+        themes_raw = form.get("themes") or ""
+
+        # NEW: character type from the form (e.g., child/animal/creature)
+        character_type = (form.get("character_type") or "").strip().lower() or None
+
+        # Parse numbers with defaults
+        try:
+            age_min = int(age_min_raw)
+        except Exception:
+            age_min = 7
+        try:
+            age_max = int(age_max_raw)
+        except Exception:
+            age_max = 9
+        if age_min > age_max:
+            age_min, age_max = age_max, age_min
+
+        try:
+            difficulty = int(difficulty_raw)
+        except Exception:
+            difficulty = 3
+
+        cats = [c.strip() for c in categories_raw.split(",") if c.strip()]
+        ths = [t.strip() for t in themes_raw.split(",") if t.strip()]
+
+        # 1) Generate story text
+        try:
+            story_text = gpt_generate_story(
+                title=raw_title,
+                age_min=age_min,
+                age_max=age_max,
+                difficulty=difficulty,
+                categories=cats or None,
+                themes=ths or None,
+                character_type=character_type,
+            )
+        except Exception as e:
+            error = f"Failed to generate story: {e}"
+            story_text = ""
+
+        final_title = raw_title or "Untitled Story"
+        body = ""
+
+        if not error:
+            lines = [ln.rstrip() for ln in story_text.splitlines()]
+            if not lines:
+                error = "GPT returned an empty story."
+            else:
+                # First line: title, then optional blank, then story body
+                candidate_title = lines[0].strip()
+                if candidate_title:
+                    final_title = candidate_title
+
+                if len(lines) >= 3 and lines[1].strip() == "":
+                    body = "\n".join(lines[2:]).strip()
+                else:
+                    body = "\n".join(lines[1:]).strip()
+
+                if not body:
+                    error = "GPT story had no body content."
+
+        story_id = None
+
+        if not error:
+            slug = slugify_title(final_title)
+
+            # Ensure slug is unique
+            existing = db.execute(
+                "SELECT 1 FROM stories WHERE slug = ?",
+                (slug,),
+            ).fetchone()
+            if existing:
+                base = slug
+                i = 2
+                while True:
+                    candidate = f"{base}-{i}"
+                    row = db.execute(
+                        "SELECT 1 FROM stories WHERE slug = ?",
+                        (candidate,),
+                    ).fetchone()
+                    if not row:
+                        slug = candidate
+                        break
+                    i += 1
+
+            meta = {
+                "slug": slug,
+                "title": final_title,
+                "author": "Interlang AI",
+                "age_min": age_min,
+                "age_max": age_max,
+                "difficulty": difficulty,
+                "categories": cats,
+                "themes": ths,
+                "provider": "Interlang AI",
+                "provider_id": slug,
+                "content": body,
+            }
+
+            try:
+                story_id = ensure_story_record(slug, meta)
+            except Exception as e:
+                error = f"Database error while saving story: {e}"
+
+        if not error and story_id is not None:
+            # 2) Generate cover image, using main_character_type
+            try:
+                ensure_story_cover_image(
+                    slug=slug,
+                    title=final_title,
+                    content=body,
+                    age_min=age_min,
+                    age_max=age_max,
+                    provider="gpt",
+                    main_character_type=character_type,
+                )
+            except Exception as e:
+                # Log only; we don't want to block the story save if cover fails
+                print("Cover generation error in admin_gpt_story:", e)
+
+            # 3) Fetch the saved story for the "Latest generated story" card
+            row = db.execute(
+                """
+                SELECT id, slug, title, age_min, age_max, difficulty,
+                       categories, themes
+                FROM stories
+                WHERE id = ?
+                """,
+                (story_id,),
+            ).fetchone()
+            if row:
+                last_story = {
+                    "id": row["id"],
+                    "slug": row["slug"],
+                    "title": row["title"],
+                    "age_min": row["age_min"],
+                    "age_max": row["age_max"],
+                    "difficulty": row["difficulty"],
+                    "categories": json.loads(row["categories"] or "[]"),
+                    "themes": json.loads(row["themes"] or "[]"),
+                }
+
+    else:
+        # GET: show latest GPT-generated story if exists
+        row = db.execute(
+            """
+            SELECT id, slug, title, age_min, age_max, difficulty,
+                   categories, themes
+            FROM stories
+            WHERE provider = 'gpt'
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        if row:
+            last_story = {
+                "id": row["id"],
+                "slug": row["slug"],
+                "title": row["title"],
+                "age_min": row["age_min"],
+                "age_max": row["age_max"],
+                "difficulty": row["difficulty"],
+                "categories": json.loads(row["categories"] or "[]"),
+                "themes": json.loads(row["themes"] or "[]"),
+            }
+
+    return render_template(
+        "admin_gpt_story.html",
+        error=error,
+        last_story=last_story,
+    )
+
 
 # -------------------- Main --------------------
 if __name__ == "__main__":
